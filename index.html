@@ -457,14 +457,12 @@ async function authTryLogin(){
   if (!rutRaw || !pwd){ authError('Ingresa tu RUT y clave'); return; }
   const rut = normRut(rutRaw);
   const staff = findStaff(rut);
-  if (!staff){ authError('RUT no encontrado en dotación HDS'); return; }
-  const est = (staff.e||'').toUpperCase();
-  if (est !== 'MEDICOS' && est !== 'ODONTOLOGOS'){
-    authError('Acceso restringido a médicos y odontólogos');
-    return;
-  }
+  // Nombre para mostrar: usa la dotación si el RUT está ahí; si no, el RUT.
+  const displayName = (staff && staff.n) ? staff.n : rutRaw;
 
-  // ───── MODO WEB: validar en backend ─────
+  // ───── MODO WEB: el backend (hoja Usuarios) decide quién entra ─────
+  // No se aplica la restricción de dotación/estamento: la autorización la
+  // controla la lista de cuentas precargadas en el servidor.
   if (WEB_MODE){
     try {
       setSyncStatus('sync');
@@ -481,19 +479,19 @@ async function authTryLogin(){
       try { localStorage.setItem(TOKEN_STORAGE, SESSION_TOKEN); } catch(e){}
       // Si mustChangePwd → forzar cambio
       if (res.user.mustChangePwd){
-        _authPendingTeam = { rut, name: staff.n };
+        _authPendingTeam = { rut, name: displayName };
         setSyncStatus('idle');
         showAuthStep('change');
         return;
       }
       // Si no tiene team → seleccionar
       if (!res.user.team){
-        _authPendingTeam = { rut, name: staff.n };
+        _authPendingTeam = { rut, name: displayName };
         setSyncStatus('idle');
         showAuthStep('team');
         return;
       }
-      AUTH_DB.session = { rut, name: staff.n, team: res.user.team, role: res.user.role, since: Date.now() };
+      AUTH_DB.session = { rut, name: displayName, team: res.user.team, role: res.user.role, since: Date.now() };
       saveAuth();
       setSyncStatus('ok');
       setTimeout(() => setSyncStatus('idle'), 1000);
@@ -510,6 +508,8 @@ async function authTryLogin(){
   }
 
   // ───── MODO LOCAL (fallback) ─────
+  // En modo local sin backend se conserva la validación por dotación.
+  if (!staff){ authError('RUT no encontrado en dotación HDS'); return; }
   const stored = AUTH_DB.passwords[rut];
   const hashIn = await sha256(pwd);
   if (stored){
