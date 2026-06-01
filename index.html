@@ -7,10 +7,10 @@
 <script src="dotacion.js"></script>
 <style>
 :root{
-  --ur:#2563eb; --ur-bg:#dbeafe; --ur-bd:#93c5fd;
-  --da:#ca8a04; --da-bg:#fef3c7; --da-bd:#fde047;
-  --he:#16a34a; --he-bg:#dcfce7; --he-bd:#86efac;
-  --db:#ea580c; --db-bg:#fed7aa; --db-bd:#fdba74;
+  --ur:#2563eb; --ur-bg:#dbeafe; --ur-bd:#93c5fd;   /* Urología · azul */
+  --da:#16a34a; --da-bg:#dcfce7; --da-bd:#86efac;   /* Digestivo Alto · verde */
+  --he:#ea580c; --he-bg:#fed7aa; --he-bd:#fdba74;   /* Hepatobiliar · naranjo */
+  --db:#eab308; --db-bg:#fef9c3; --db-bd:#fde047;   /* Digestivo Bajo · amarillo */
   --x: #94a3b8; --x-bg:#f1f5f9;
 }
 *{box-sizing:border-box}
@@ -55,21 +55,39 @@ a{color:inherit;text-decoration:none}
 .cal-legend .dot.he{background:var(--he)}
 .cal-legend .dot.db{background:var(--db)}
 
-.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+/* Grilla: L-V anchas, Sáb/Dom a 1/4. 5 columnas grandes + 2 angostas */
+.cal-grid{display:grid;grid-template-columns:repeat(5,1fr) .28fr .28fr;gap:6px}
 .cal-head{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;text-align:center;padding:4px 0}
-.cal-day{background:#0f172a;border:1px solid #1e293b;border-radius:8px;min-height:108px;padding:6px 7px;display:flex;flex-direction:column;cursor:pointer;transition:.12s;position:relative;overflow:hidden}
+.cal-head.wknd{font-size:8px;color:#475569}
+.cal-scroll{max-height:calc(100vh - 230px);overflow-y:auto;padding-right:4px}
+.cal-week{display:contents}
+/* Separador de mes: una banda con etiqueta, en su propia fila completa */
+.cal-monthsep{grid-column:1 / -1;display:flex;align-items:center;gap:10px;margin:10px 0 2px;color:#93c5fd;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
+.cal-monthsep::before,.cal-monthsep::after{content:"";flex:1;border-top:2px dashed #334155}
+/* Separador que respeta días (mes cambia a mitad de semana): solo bajo los días del mes nuevo */
+.cal-day.newmonth{border-top:2px dashed #60a5fa}
+.cal-day{background:#0f172a;border:1px solid #1e293b;border-radius:8px;min-height:118px;padding:6px 7px;display:flex;flex-direction:column;cursor:pointer;transition:.12s;position:relative;overflow:hidden}
 .cal-day:hover{border-color:#475569}
-.cal-day.weekend{opacity:.35}
+.cal-day.weekend{min-height:118px;opacity:.5;padding:5px 4px}
+.cal-day.weekend .day-num{font-size:11px}
 .cal-day.empty{background:transparent;border-color:transparent;cursor:default}
-.cal-day.today{border-color:#3b82f6;box-shadow:0 0 0 2px rgba(59,130,246,.3)}
+.cal-day.today{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.45);background:#0f1f3a}
+.cal-day.today::before{content:"HOY";position:absolute;top:3px;right:5px;font-size:8px;font-weight:900;color:#60a5fa;letter-spacing:1px;z-index:2}
+/* Dos bloques de equipo por día */
+.cal-day .slots{margin-top:4px;flex:1;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+.cal-slot{border-radius:5px;padding:2px 4px;background:rgba(255,255,255,.05);border-left:3px solid var(--slot-c,#64748b)}
+.cal-slot .slot-tag{font-size:8px;font-weight:800;color:#fff;letter-spacing:.4px;display:inline-block;padding:0 4px;border-radius:3px;background:var(--slot-c,#64748b)}
+.cal-slot .slot-proc{font-size:9px;color:#e2e8f0;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.cal-slot .slot-proc.pending{opacity:.55;text-decoration:line-through}
+.cal-day .pend-flag{position:absolute;bottom:3px;right:4px;font-size:11px;color:#fbbf24}
 .cal-day.blocked{background:repeating-linear-gradient(45deg,#1e293b,#1e293b 6px,#0f172a 6px,#0f172a 12px);opacity:.55}
 .cal-day .day-num{font-size:12px;font-weight:700;color:#94a3b8;display:flex;align-items:center;justify-content:space-between}
 .cal-day.today .day-num{color:#60a5fa}
 .cal-day .team-tag{font-size:9px;font-weight:800;padding:2px 6px;border-radius:5px;color:#fff;letter-spacing:.5px;line-height:1.3}
-.cal-day.ur{background:linear-gradient(180deg,rgba(37,99,235,.25),rgba(37,99,235,.08));border-color:rgba(37,99,235,.45)}
-.cal-day.da{background:linear-gradient(180deg,rgba(202,138,4,.25),rgba(202,138,4,.08));border-color:rgba(202,138,4,.45)}
-.cal-day.he{background:linear-gradient(180deg,rgba(22,163,74,.25),rgba(22,163,74,.08));border-color:rgba(22,163,74,.45)}
-.cal-day.db{background:linear-gradient(180deg,rgba(234,88,12,.25),rgba(234,88,12,.08));border-color:rgba(234,88,12,.45)}
+.cal-day.ur{background:linear-gradient(180deg,rgba(37,99,235,.25),rgba(37,99,235,.08));border-color:rgba(37,99,235,.45)}   /* azul */
+.cal-day.da{background:linear-gradient(180deg,rgba(22,163,74,.25),rgba(22,163,74,.08));border-color:rgba(22,163,74,.45)}   /* verde */
+.cal-day.he{background:linear-gradient(180deg,rgba(234,88,12,.25),rgba(234,88,12,.08));border-color:rgba(234,88,12,.45)}   /* naranjo */
+.cal-day.db{background:linear-gradient(180deg,rgba(234,179,8,.25),rgba(234,179,8,.10));border-color:rgba(234,179,8,.5)}    /* amarillo */
 .cal-day.swapped::after{content:"⇄";position:absolute;top:4px;right:6px;font-size:11px;color:#fbbf24;font-weight:700}
 .cal-day.swapped .team-tag{outline:1px dashed rgba(255,255,255,.5)}
 .cal-day .procs{margin-top:5px;flex:1;display:flex;flex-direction:column;gap:2px;overflow:hidden}
@@ -250,10 +268,10 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
       <div class="auth-step-title">Elige tu equipo</div>
       <div class="auth-step-sub">Selecciona el equipo al que perteneces. Esto define tu rol de edición.</div>
       <div class="team-cards" id="team-cards">
-        <div class="team-card ur" data-team="ur"><div class="name">🔵 Urología</div><div class="role">Editor de UR (Mar–Jue)</div></div>
-        <div class="team-card da" data-team="da"><div class="name">🟡 Digestivo Alto</div><div class="role">Editor de DA (Lun impar)</div></div>
-        <div class="team-card he" data-team="he"><div class="name">🟢 Hepatobiliar</div><div class="role">Editor de HE (Lun par)</div></div>
-        <div class="team-card db" data-team="db"><div class="name">🟠 Digestivo Bajo</div><div class="role">Editor de DB (Vie)</div></div>
+        <div class="team-card ur" data-team="ur"><div class="name">🔵 Urología</div><div class="role">Editor de Urología</div></div>
+        <div class="team-card da" data-team="da"><div class="name">🟢 Digestivo Alto</div><div class="role">Editor de D. Alto</div></div>
+        <div class="team-card he" data-team="he"><div class="name">🟠 Hepatobiliar</div><div class="role">Editor de Hepatobiliar</div></div>
+        <div class="team-card db" data-team="db"><div class="name">🟡 Digestivo Bajo</div><div class="role">Editor de D. Bajo</div></div>
         <div class="team-card viewer" data-team="_viewer"><div class="name">👁 Solo lectura</div><div class="role">Veo todo, no edito</div></div>
       </div>
       <button class="auth-btn" id="auth-team-btn" disabled>Continuar</button>
@@ -292,22 +310,21 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
   <div class="cal-wrap">
     <div class="cal-toolbar">
       <div class="month-nav">
-        <button onclick="navMonth(-1)">‹</button>
         <span class="month-name" id="month-name">—</span>
-        <button onclick="navMonth(1)">›</button>
-        <button onclick="goToday()">Hoy</button>
+        <button onclick="goToday()">⌖ Hoy</button>
       </div>
       <h2 style="text-align:right">Calendario</h2>
       <button class="btn-primary" onclick="openGenerator()">⚙ Generar semanas</button>
     </div>
     <div class="cal-legend">
-      <div class="item"><div class="dot ur"></div>Urología (Mar–Jue)</div>
-      <div class="item"><div class="dot da"></div>D Alto (Lun impar)</div>
-      <div class="item"><div class="dot he"></div>Hepato (Lun par)</div>
-      <div class="item"><div class="dot db"></div>D Bajo (Vie)</div>
-      <div class="item">⇄ Swap</div>
+      <div class="item"><div class="dot ur"></div>Urología</div>
+      <div class="item"><div class="dot da"></div>D Alto</div>
+      <div class="item"><div class="dot he"></div>Hepato</div>
+      <div class="item"><div class="dot db"></div>D Bajo</div>
     </div>
-    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-scroll" id="cal-scroll">
+      <div class="cal-grid" id="cal-grid"></div>
+    </div>
   </div>
 
   <div class="side">
@@ -481,14 +498,14 @@ async function authTryLogin(){
       try { localStorage.setItem(TOKEN_STORAGE, SESSION_TOKEN); } catch(e){}
       // Si mustChangePwd → forzar cambio
       if (res.user.mustChangePwd){
-        _authPendingTeam = { rut, name: displayName };
+        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor' };
         setSyncStatus('idle');
         showAuthStep('change');
         return;
       }
       // Si no tiene team → seleccionar
       if (!res.user.team){
-        _authPendingTeam = { rut, name: displayName };
+        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor' };
         setSyncStatus('idle');
         showAuthStep('team');
         return;
@@ -600,7 +617,7 @@ async function authConfirmTeam(){
     // Si el server tiene team en blanco, lo va a respetar — el flag editor del
     // usuario está controlado por role en server.
     AUTH_DB.profiles[rut] = { team, joinedAt: Date.now() };
-    AUTH_DB.session = { rut, name: _authPendingTeam.name, team, role: 'editor', since: Date.now() };
+    AUTH_DB.session = { rut, name: _authPendingTeam.name, team, role: _authPendingTeam.role || 'editor', since: Date.now() };
     saveAuth();
     await loadStateFromServer();
     applySession();
@@ -632,7 +649,7 @@ async function loadStateFromServer(){
       return;
     }
     if (res.state){
-      state.days = res.state.days || {};
+      state.days = decodeDaysFromServer(res.state.days || {});
       state.queue = { ur:[], da:[], he:[], db:[], ...(res.state.queue||{}) };
       state.anchor = res.state.anchor || null;
       save(); // espejo local para offline
@@ -669,13 +686,13 @@ function applySession(){
                     s.team === 'he' ? 'Hepato' :
                     s.team === 'db' ? 'D Bajo' : '—';
   document.getElementById('user-team').textContent = teamLabel;
-  const isViewer = s.team === '_viewer';
+  const viewer = s.team === '_viewer';
   const roleEl = document.getElementById('user-role');
-  roleEl.textContent = isViewer ? 'VIEWER' : 'EDITOR';
-  roleEl.className = 'role-badge ' + (isViewer ? 'viewer' : 'editor');
+  roleEl.textContent = viewer ? 'VIEWER' : (s.role==='admin' ? 'ADMIN' : 'EDITOR');
+  roleEl.className = 'role-badge ' + (viewer ? 'viewer' : (s.role==='admin'?'editor':'editor'));
   // Modo lectura: aplicar clase al body
-  document.body.classList.toggle('readonly', isViewer);
-  if (isViewer){
+  document.body.classList.toggle('readonly', viewer);
+  if (viewer){
     if (!document.getElementById('viewer-banner')){
       const b = document.createElement('div');
       b.id = 'viewer-banner'; b.className = 'viewer-banner';
@@ -717,7 +734,7 @@ async function authInit(){
       const res = await apiCall('getState');
       if (res.ok){
         if (res.state){
-          state.days = res.state.days || {};
+          state.days = decodeDaysFromServer(res.state.days || {});
           state.queue = { ur:[], da:[], he:[], db:[], ...(res.state.queue||{}) };
           state.anchor = res.state.anchor || null;
           save();
@@ -759,9 +776,9 @@ window.authLogout = authLogout;
 
 const EQUIPOS = {
   ur: { name:'Urología',         short:'URO',   color:'var(--ur)',  cls:'ur',  ico:'🔵' },
-  da: { name:'Digestivo Alto',   short:'D-ALT', color:'var(--da)',  cls:'da',  ico:'🟡' },
-  he: { name:'Hepatobiliar',     short:'HEPA',  color:'var(--he)',  cls:'he',  ico:'🟢' },
-  db: { name:'Digestivo Bajo',   short:'D-BAJ', color:'var(--db)',  cls:'db',  ico:'🟠' }
+  da: { name:'Digestivo Alto',   short:'D-ALT', color:'var(--da)',  cls:'da',  ico:'🟢' },
+  he: { name:'Hepatobiliar',     short:'HEPA',  color:'var(--he)',  cls:'he',  ico:'🟠' },
+  db: { name:'Digestivo Bajo',   short:'D-BAJ', color:'var(--db)',  cls:'db',  ico:'🟡' }
 };
 const EQ_ORDER = ['ur','da','he','db'];
 
@@ -780,8 +797,16 @@ const save = () => { try { localStorage.setItem(STORAGE, JSON.stringify(state));
 function syncDay(dateKey){
   if (!WEB_MODE || !SESSION_TOKEN) return;
   const d = state.days[dateKey] || {};
+  // Guardamos el modelo nuevo (slots) dentro de procs_json del backend, que es
+  // un texto libre JSON. team queda vacío; toda la data viaja en procs.
+  // Empaquetamos {slots, blocked} como un único "proc meta" + procs planos para
+  // compatibilidad de lectura. Para simplicidad: serializamos el día completo
+  // en el campo procs como [{__day: {...}}].
+  const payload = normalizeDay(d);
   pushWrite(() => apiCall('saveDay', {
-    dateKey, team: d.team || '', procs: d.procs || []
+    dateKey,
+    team: d.blocked ? '_blocked' : (payload.slots[0]?.team || ''),
+    procs: [{ __day: payload }]
   }));
 }
 function syncQueue(team){
@@ -816,102 +841,140 @@ function getAnchor(){
   return mon;
 }
 
-// Calcula equipo asignado por defecto para una fecha
-function teamForDate(d){
+// Distribución SUGERIDA por defecto (NO es una regla rígida: el usuario puede
+// asignar cualquier equipo a cualquier día; esto solo prellena al generar).
+// Devuelve los 2 equipos sugeridos para el día [primero, segundo].
+function defaultTeamsForDate(d){
   const dow = (d.getDay() + 6) % 7; // 0 lunes
-  if (dow >= 5) return null; // fin de semana
-  if (dow === 1 || dow === 2 || dow === 3) return 'ur'; // Mar-Jue
-  if (dow === 4) return 'db'; // Vie
-  // Lunes: alternar
-  const anchor = getAnchor();
-  const diffWeeks = Math.floor((d - anchor) / (7*24*3600*1000));
-  return diffWeeks % 2 === 0 ? 'da' : 'he';
+  if (dow >= 5) return [];          // fin de semana
+  if (dow === 0){                    // Lunes: alterna D.Alto / Hepato
+    const anchor = getAnchor();
+    const diffWeeks = Math.floor((d - anchor) / (7*24*3600*1000));
+    return diffWeeks % 2 === 0 ? ['da','he'] : ['he','da'];
+  }
+  if (dow === 1 || dow === 2 || dow === 3) return ['ur', null]; // Mar-Jue
+  if (dow === 4) return ['db', null];                            // Vie
+  return [];
 }
 
+// Modelo por día: state.days[k] = { slots: [{team, procs:[...]}, {team, procs:[...]}], blocked?:bool }
+// Compatibilidad: si viene del formato viejo { team, procs }, lo migramos a slots.
+function normalizeDay(stored){
+  if (!stored) return { slots: [], blocked:false };
+  if (stored.slots) return { slots: stored.slots, blocked: !!stored.blocked };
+  // formato viejo
+  if (stored.team === '_blocked') return { slots: [], blocked:true };
+  if (stored.team || (stored.procs && stored.procs.length))
+    return { slots: [{ team: stored.team || null, procs: stored.procs || [] }], blocked:false };
+  return { slots: [], blocked:false };
+}
+// Decodifica el formato que llega del backend. Cada día puede venir como:
+//   { team, procs:[{__day:{slots,blocked}}] }  → nuevo, empaquetado
+//   { team, procs:[...] }                       → viejo (1 equipo)
+function decodeDaysFromServer(days){
+  const out = {};
+  Object.entries(days||{}).forEach(([k,v])=>{
+    if (v && Array.isArray(v.procs) && v.procs[0] && v.procs[0].__day){
+      out[k] = v.procs[0].__day;          // ya viene como {slots,blocked}
+    } else {
+      out[k] = normalizeDay(v);            // migra formato viejo
+    }
+  });
+  return out;
+}
 function getDayInfo(d){
   const k = dKey(d);
-  const stored = state.days[k] || {};
-  const team_default = teamForDate(d);
-  return {
-    key: k,
-    team: stored.team || team_default,
-    team_default,
-    is_swapped: stored.team && stored.team !== team_default && stored.team !== '_blocked',
-    is_blocked: stored.team === '_blocked',
-    procs: stored.procs || [],
-    note: stored.note || ''
-  };
+  const day = normalizeDay(state.days[k]);
+  return { key:k, slots:day.slots, blocked:day.blocked };
 }
+function dayProcCount(info){ return info.slots.reduce((s,sl)=>s+(sl.procs||[]).length,0); }
+function dayHasPending(info){ return info.slots.some(sl=>(sl.procs||[]).some(p=>p.pendingDel)); }
 
-// ── NAVEGACIÓN ──
-let viewMonth = new Date();
-viewMonth.setDate(1);
-function navMonth(delta){
-  viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth()+delta, 1);
-  renderCal();
-}
+// ── NAVEGACIÓN (scroll infinito) ──
+const today0 = (()=>{ const t=new Date(); t.setHours(0,0,0,0); return t; })();
+let WEEKS_BACK = 2;     // semanas hacia atrás desde hoy
+let WEEKS_FWD  = 16;    // semanas hacia adelante (se amplía al hacer scroll)
+function mondayOf(d){ const x=new Date(d); const dow=(x.getDay()+6)%7; x.setDate(x.getDate()-dow); x.setHours(0,0,0,0); return x; }
 function goToday(){
-  viewMonth = new Date(); viewMonth.setDate(1);
   renderCal();
+  const el = document.querySelector('.cal-day.today');
+  if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
-// ── RENDER CALENDARIO ──
+// ── RENDER CALENDARIO (semanas continuas hacia abajo) ──
 function renderCal(){
-  document.getElementById('month-name').textContent = `${MONTHS[viewMonth.getMonth()]} ${viewMonth.getFullYear()}`;
   const grid = document.getElementById('cal-grid');
-  let html = WEEKDAYS.map(w => `<div class="cal-head">${w}</div>`).join('');
-  // Determinar día inicial: lunes de la primera semana del mes
-  const first = new Date(viewMonth);
-  const firstDow = (first.getDay() + 6) % 7; // 0=Lun
-  const startDate = new Date(first);
-  startDate.setDate(first.getDate() - firstDow);
-  // Generar 6 semanas = 42 celdas
-  const today = new Date(); today.setHours(0,0,0,0);
-  for (let i = 0; i < 42; i++){
-    const d = new Date(startDate);
-    d.setDate(startDate.getDate() + i);
-    const inMonth = d.getMonth() === viewMonth.getMonth();
-    const dow = (d.getDay() + 6) % 7;
-    const isWeekend = dow >= 5;
-    const isToday = d.getTime() === today.getTime();
-    const info = getDayInfo(d);
-    let cls = 'cal-day';
-    if (!inMonth) cls += ' empty';
-    else if (isWeekend) cls += ' weekend';
-    if (isToday) cls += ' today';
-    if (info.is_blocked) cls += ' blocked';
-    else if (info.team && !isWeekend) cls += ' '+ info.team;
-    if (info.is_swapped) cls += ' swapped';
-    const eq = info.team && info.team !== '_blocked' ? EQUIPOS[info.team] : null;
-    let inner = '';
-    if (inMonth){
-      const procsSlice = info.procs.slice(0,3);
-      const procsHtml = procsSlice.map(p => `<div class="proc" title="${esc(p.tipo)} · ${esc(p.cirujano||'')}">${esc(p.paciente||'(sin nombre)')}</div>`).join('');
-      const more = info.procs.length > 3 ? `<div class="more">+${info.procs.length - 3} más</div>` : '';
-      inner = `
-        <div class="day-num">
-          <span>${d.getDate()}</span>
-          ${eq && !isWeekend ? `<span class="team-tag" style="background:${eq.color}">${eq.short}</span>` : ''}
-        </div>
-        <div class="procs">${procsHtml}${more}</div>`;
+  const start = mondayOf(new Date(today0.getTime() - WEEKS_BACK*7*86400000));
+  const totalWeeks = WEEKS_BACK + WEEKS_FWD;
+  // Cabecera de columnas (L-V grandes, S/D pequeños)
+  let html = WEEKDAYS.map((w,i) => `<div class="cal-head${i>=5?' wknd':''}">${w}</div>`).join('');
+  let lastMonth = -1;
+  for (let wk=0; wk<totalWeeks; wk++){
+    for (let dd=0; dd<7; dd++){
+      const d = new Date(start.getTime() + (wk*7+dd)*86400000);
+      const dow = (d.getDay()+6)%7;
+      const isWeekend = dow>=5;
+      const isToday = d.getTime()===today0.getTime();
+      const info = getDayInfo(d);
+      // Separador de mes: banda completa cuando la semana ARRANCA en mes nuevo
+      const isNewMonth = d.getMonth()!==lastMonth;
+      if (isNewMonth && dd===0){
+        html += `<div class="cal-monthsep">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`;
+      }
+      // Marca de mes nuevo a mitad de semana (día 1 del mes que no cae en lunes)
+      const isFirstOfMonth = d.getDate()===1 && dd!==0;
+      lastMonth = d.getMonth();
+
+      let cls = 'cal-day';
+      if (isWeekend) cls += ' weekend';
+      if (isToday) cls += ' today';
+      if (info.blocked) cls += ' blocked';
+      else if (info.slots[0] && info.slots[0].team && !isWeekend) cls += ' '+info.slots[0].team;
+      if (isFirstOfMonth) cls += ' newmonth';
+
+      let inner = `<div class="day-num"><span>${d.getDate()}${isFirstOfMonth?` <small style="color:#60a5fa">${MONTHS[d.getMonth()].slice(0,3)}</small>`:''}</span></div>`;
+      if (!isWeekend && !info.blocked){
+        const slotsHtml = info.slots.filter(sl=>sl.team||(sl.procs&&sl.procs.length)).map(sl=>{
+          const eq = sl.team ? EQUIPOS[sl.team] : null;
+          const procs = (sl.procs||[]).slice(0,2).map(p=>`<div class="slot-proc${p.pendingDel?' pending':''}">${esc(p.paciente||p.tipo||'(sin info)')}</div>`).join('');
+          const more = (sl.procs||[]).length>2 ? `<div class="slot-proc" style="color:#94a3b8">+${sl.procs.length-2} más</div>`:'';
+          return `<div class="cal-slot" style="--slot-c:${eq?eq.color:'#64748b'}">
+            ${eq?`<span class="slot-tag">${eq.short}</span>`:''}${procs}${more}</div>`;
+        }).join('');
+        inner += `<div class="slots">${slotsHtml}</div>`;
+        if (dayHasPending(info)) inner += `<span class="pend-flag" title="Solicitud de eliminación pendiente">⚠</span>`;
+      } else if (info.blocked){
+        inner += `<div class="slots" style="color:#64748b;font-size:9px;font-style:italic;padding-top:4px">Bloqueado</div>`;
+      }
+      html += `<div class="${cls}" data-date="${dKey(d)}" onclick="openDay('${dKey(d)}')">${inner}</div>`;
     }
-    html += `<div class="${cls}" data-date="${dKey(d)}" ${inMonth?`onclick="openDay('${dKey(d)}')"`:''}>${inner}</div>`;
   }
   grid.innerHTML = html;
+  // Etiqueta de mes en toolbar = mes del día de hoy o del centro visible
+  document.getElementById('month-name').textContent = `${MONTHS[today0.getMonth()]} ${today0.getFullYear()}`;
   updateKpis();
+}
+// Ampliar semanas al hacer scroll cerca del fondo
+function _calScrollHandler(){
+  const sc = document.getElementById('cal-scroll');
+  if (!sc) return;
+  if (sc.scrollTop + sc.clientHeight > sc.scrollHeight - 200){
+    WEEKS_FWD += 8;
+    renderCal();
+  }
 }
 
 // ── KPIs HEADER ──
 function updateKpis(){
-  const totalProcs = Object.values(state.days).reduce((s,d) => s + (d.procs||[]).length, 0);
+  const cnt = d => normalizeDay(d).slots.reduce((s,sl)=>s+(sl.procs||[]).length,0);
+  const totalProcs = Object.values(state.days).reduce((s,d) => s + cnt(d), 0);
   const totalCola = EQ_ORDER.reduce((s,t) => s + (state.queue[t]||[]).length, 0);
-  // Próxima semana = 7 días desde hoy
   const today = new Date(); today.setHours(0,0,0,0);
   const next7 = new Date(today); next7.setDate(today.getDate() + 7);
   let nextWeek = 0;
   Object.entries(state.days).forEach(([k,d]) => {
     const dt = parseDate(k);
-    if (dt >= today && dt < next7) nextWeek += (d.procs||[]).length;
+    if (dt >= today && dt < next7) nextWeek += cnt(d);
   });
   document.getElementById('kpi-prog').textContent = totalProcs;
   document.getElementById('kpi-cola').textContent = totalCola;
@@ -963,84 +1026,123 @@ function addToQueue(t){
 function removeFromQueue(t,i){
   state.queue[t].splice(i,1); save(); syncQueue(t); renderQueue(); updateKpis();
 }
+// ── Helpers de sesión / permisos ──
+function myRut(){ return (AUTH_DB.session && AUTH_DB.session.rut) || ''; }
+function myRole(){ return (AUTH_DB.session && AUTH_DB.session.role) || 'editor'; }
+function isAdminOrJefe(){ return myRole()==='admin'; }
+function isViewer(){ return AUTH_DB.session && AUTH_DB.session.team==='_viewer'; }
+
+// Asegura que el día tenga estructura de slots y devuelve el day normalizado guardado
+function ensureDay(key){
+  const norm = normalizeDay(state.days[key]);
+  state.days[key] = norm;
+  return norm;
+}
+// Busca/crea el slot de un equipo dentro del día (máx 2 equipos por día)
+function getOrCreateSlot(key, team){
+  const day = ensureDay(key);
+  let sl = day.slots.find(s=>s.team===team);
+  if (sl) return sl;
+  if (day.slots.length >= 2){ return null; } // ya hay 2 equipos
+  sl = { team, procs: [] };
+  day.slots.push(sl);
+  return sl;
+}
+
 function assignFromQueue(t,i){
   const item = state.queue[t][i];
-  // Sugerir siguiente día disponible del equipo
-  const slot = nextSlotForTeam(t);
-  if (!slot){
-    alert('No hay días generados para '+EQUIPOS[t].name+'. Genera más semanas primero.');
-    return;
-  }
-  if (!confirm(`Asignar paciente "${item.paciente}" al ${slot}?`)) return;
-  const k = slot;
-  if (!state.days[k]) state.days[k] = { team: t, procs: [] };
-  state.days[k].procs = state.days[k].procs || [];
-  state.days[k].procs.push({paciente: item.paciente, tipo: item.tipo, cirujano: item.cirujano||'', durMin:120});
+  const slot = nextDayForTeam(t);
+  if (!slot){ alert('No hay días futuros generados. Genera más semanas primero.'); return; }
+  if (!confirm(`Asignar "${item.paciente}" a ${EQUIPOS[t].name} el ${slot}?`)) return;
+  const sl = getOrCreateSlot(slot, t);
+  if (!sl){ alert('Ese día ya tiene 2 equipos asignados.'); return; }
+  sl.procs.push({ paciente:item.paciente, tipo:item.tipo, cirujano:item.cirujano||'', durMin:120, owner:myRut(), team:t });
   state.queue[t].splice(i,1);
-  save(); syncDay(k); syncQueue(t); renderCal(); renderQueue();
+  save(); syncDay(slot); syncQueue(t); renderCal(); renderQueue();
 }
-// Próximo día programado para el equipo que NO esté lleno
-function nextSlotForTeam(t){
-  const today = new Date(); today.setHours(0,0,0,0);
-  const keys = Object.keys(state.days)
-    .filter(k => state.days[k].team === t && state.days[k].team !== '_blocked')
-    .sort();
+// Próximo día futuro (cualquiera) con menos de 2 equipos
+function nextDayForTeam(t){
+  const keys = Object.keys(state.days).sort();
   for (const k of keys){
-    if (parseDate(k) >= today) return k;
+    if (parseDate(k) < today0) continue;
+    const day = normalizeDay(state.days[k]);
+    if (day.blocked) continue;
+    if (day.slots.find(s=>s.team===t)) return k;       // ya tiene ese equipo
+    if (day.slots.length < 2) return k;                 // hay espacio
   }
   return null;
 }
 
-// ── MODAL DÍA ──
+// ── MODAL DÍA (2 equipos / 2 cirugías) ──
 function openDay(key){
   const d = parseDate(key);
+  const dow = (d.getDay()+6)%7;
   const info = getDayInfo(d);
-  const eq = info.team && info.team !== '_blocked' ? EQUIPOS[info.team] : null;
-  const cls = info.is_blocked ? 'x' : (info.team || 'x');
   const box = document.getElementById('modal-box');
-  const procsHtml = info.procs.length
-    ? info.procs.map((p,i) => `<div class="proc-row" style="border-color:${eq?eq.color:'#3b82f6'}">
-        <div><b>${esc(p.paciente)}</b><small>${esc(p.tipo)} · ${esc(p.cirujano||'')} · ${p.durMin||120} min</small></div>
-        <button class="del" onclick="delProc('${key}',${i})">×</button>
-      </div>`).join('')
-    : '<div style="color:#64748b;font-size:11px;padding:8px;text-align:center;font-style:italic">Sin procedimientos programados</div>';
+  const headCls = info.blocked ? 'x' : (info.slots[0]?.team || 'x');
+  const dateLong = `${WEEKDAYS[dow]} ${d.getDate()} de ${MONTHS[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
+  const ro = isViewer();
 
-  const dateLong = `${WEEKDAYS[(d.getDay()+6)%7]} ${d.getDate()} de ${MONTHS[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
+  // Render de cada slot de equipo
+  function slotBlock(sl, sidx){
+    const eq = sl.team ? EQUIPOS[sl.team] : null;
+    const procsHtml = (sl.procs||[]).length
+      ? sl.procs.map((p,pi) => {
+          const mine = p.owner===myRut() || !p.owner;
+          const canHardDel = mine || isAdminOrJefe();
+          let badge = '';
+          if (p.pendingDel) badge = `<span style="color:#fbbf24;font-size:9px">⚠ eliminación pendiente${p.pendingDel.reemplazo?` → propone: ${esc(p.pendingDel.reemplazo)}`:''}</span>`;
+          return `<div class="proc-row" style="border-color:${eq?eq.color:'#3b82f6'}${p.pendingDel?';opacity:.7':''}">
+            <div><b>${esc(p.paciente||p.tipo||'(sin info)')}</b><small>${esc(p.tipo||'')}${p.cirujano?' · '+esc(p.cirujano):''}${p.owner&&p.owner!==myRut()?' · ['+esc((p.team&&EQUIPOS[p.team]?EQUIPOS[p.team].short:''))+']':''}</small>${badge?'<br>'+badge:''}</div>
+            <div style="display:flex;gap:4px">
+              ${p.pendingDel && isAdminOrJefe() ? `<button class="del" title="Aprobar eliminación" style="background:#16a34a" onclick="approveDel('${key}',${sidx},${pi})">✓</button><button class="del" title="Rechazar" onclick="rejectDel('${key}',${sidx},${pi})">✕</button>` : ''}
+              ${!ro && !p.pendingDel ? (canHardDel
+                  ? `<button class="del" onclick="delProc('${key}',${sidx},${pi})">×</button>`
+                  : `<button class="del" title="Sugerir eliminación (requiere validación)" style="background:#7c2d12" onclick="requestDel('${key}',${sidx},${pi})">⚠</button>`) : ''}
+            </div>
+          </div>`;
+        }).join('')
+      : '<div style="color:#64748b;font-size:11px;padding:6px;text-align:center;font-style:italic">Sin pacientes</div>';
+    return `<div style="border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:10px;border-left:3px solid ${eq?eq.color:'#64748b'}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <select ${ro?'disabled':''} onchange="setSlotTeam('${key}',${sidx},this.value)" style="flex:1;padding:5px 7px;border:1px solid #334155;border-radius:5px;background:#0f172a;color:#e2e8f0;font-size:12px">
+          <option value="">— Equipo ${sidx+1} —</option>
+          ${EQ_ORDER.map(t=>`<option value="${t}" ${t===sl.team?'selected':''}>${EQUIPOS[t].ico} ${EQUIPOS[t].name}</option>`).join('')}
+        </select>
+        ${!ro && (sl.team||(sl.procs&&sl.procs.length)) ? `<button class="del" title="Quitar este bloque" onclick="removeSlot('${key}',${sidx})">×</button>`:''}
+      </div>
+      <div class="proc-list">${procsHtml}</div>
+      ${!ro ? `<div class="field-row" style="margin-top:8px">
+        <div class="field"><input id="np-pac-${sidx}" type="text" placeholder="Paciente o procedimiento"></div>
+        <button class="btn" style="white-space:nowrap" onclick="addProc('${key}',${sidx})">+ Agregar</button>
+      </div>
+      <div class="field-row" style="margin-top:4px">
+        <div class="field"><input id="np-cir-${sidx}" type="text" placeholder="Cirujano (opcional)"></div>
+        <div class="field"><input id="np-tipo-${sidx}" type="text" placeholder="Detalle (opcional)"></div>
+      </div>`:''}
+    </div>`;
+  }
+
+  // Slots a mostrar: los existentes + uno vacío si hay menos de 2 (para agregar 2º equipo)
+  const slots = info.slots.slice();
+  while (slots.length < 2) slots.push({ team:null, procs:[] });
+
   box.innerHTML = `
-    <div class="modal-head ${cls}">
+    <div class="modal-head ${headCls}">
       <div>
-        <h3>${info.is_blocked ? '🚫 Día bloqueado' : (eq ? eq.name : 'Sin asignar')}</h3>
-        <div class="sub">${dateLong}${info.is_swapped ? ' · ⇄ Swap (default: '+(EQUIPOS[info.team_default]?.name||'—')+')' : ''}</div>
+        <h3>${info.blocked ? '🚫 Día bloqueado' : dateLong}</h3>
+        <div class="sub">${dow>=5?'Fin de semana':'Hasta 2 equipos pueden operar este día'}</div>
       </div>
       <button class="x" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
-      <div class="modal-section-title">Equipo asignado</div>
-      <div class="field">
-        <select id="m-team">
-          ${EQ_ORDER.map(t => `<option value="${t}" ${t===info.team?'selected':''}>${EQUIPOS[t].name}</option>`).join('')}
-          <option value="_blocked" ${info.is_blocked?'selected':''}>🚫 Bloqueado (feriado / ausencia)</option>
-        </select>
-      </div>
-      ${info.is_swapped || info.team !== info.team_default ? `<button class="btn ghost" onclick="resetTeam('${key}')" style="font-size:11px;padding:5px 10px">↺ Volver al equipo por defecto (${EQUIPOS[info.team_default]?.short||'—'})</button>` : ''}
-      <div class="modal-section-title">Procedimientos del día (${info.procs.length})</div>
-      <div class="proc-list">${procsHtml}</div>
-      <div class="modal-section-title" style="margin-top:14px">Agregar procedimiento</div>
-      <div class="field-row">
-        <div class="field"><label>Paciente</label><input id="np-pac" type="text" placeholder="Nombre completo"></div>
-        <div class="field"><label>Cirujano</label><input id="np-cir" type="text" placeholder="Dr/a"></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Procedimiento</label><input id="np-tipo" type="text" placeholder="Prostatectomía radical / Resección..."></div>
-        <div class="field"><label>Duración (min)</label><input id="np-dur" type="number" value="120" min="30" step="30"></div>
-      </div>
+      ${info.blocked
+        ? `<div style="text-align:center;padding:20px;color:#94a3b8">Día marcado como bloqueado (feriado / sin pabellón).${!ro?'<br><button class="btn ghost" style="margin-top:10px" onclick="toggleBlock(\''+key+'\')">↺ Desbloquear</button>':''}</div>`
+        : slots.map((sl,i)=>slotBlock(sl,i)).join('')}
+      ${!ro && !info.blocked ? `<button class="btn ghost" style="font-size:11px;padding:5px 10px" onclick="toggleBlock('${key}')">🚫 Marcar día como bloqueado</button>`:''}
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
-      <div style="display:flex;gap:6px">
-        <button class="btn warn" onclick="saveDayMeta('${key}')">💾 Guardar cambios</button>
-        <button class="btn" onclick="addProc('${key}')">+ Procedimiento</button>
-      </div>
     </div>`;
   document.getElementById('modal-bg').classList.add('open');
 }
@@ -1048,38 +1150,68 @@ function closeModal(){ document.getElementById('modal-bg').classList.remove('ope
 document.getElementById('modal-bg').addEventListener('click', e => { if (e.target.id==='modal-bg') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
 
-function saveDayMeta(key){
-  const team = document.getElementById('m-team').value;
-  const dd = parseDate(key);
-  const def = teamForDate(dd);
-  if (!state.days[key]) state.days[key] = {};
-  if (team === '_blocked') state.days[key].team = '_blocked';
-  else state.days[key].team = team;
-  state.days[key].procs = state.days[key].procs || [];
-  save(); syncDay(key); closeModal(); renderCal(); renderQueue();
+function setSlotTeam(key, sidx, team){
+  const day = ensureDay(key);
+  while (day.slots.length <= sidx) day.slots.push({ team:null, procs:[] });
+  // Evitar el mismo equipo en los 2 slots
+  if (team && day.slots.some((s,i)=>i!==sidx && s.team===team)){ alert('Ese equipo ya está en el otro bloque del día.'); openDay(key); return; }
+  day.slots[sidx].team = team || null;
+  save(); syncDay(key); renderCal(); openDay(key);
 }
-function resetTeam(key){
-  const dd = parseDate(key);
-  const def = teamForDate(dd);
-  if (!state.days[key]) state.days[key] = {};
-  state.days[key].team = def;
-  save(); syncDay(key); openDay(key); renderCal();
+function removeSlot(key, sidx){
+  const day = ensureDay(key);
+  if (!day.slots[sidx]) return;
+  if ((day.slots[sidx].procs||[]).length && !confirm('Este bloque tiene pacientes. ¿Quitarlo igual?')) return;
+  day.slots.splice(sidx,1);
+  save(); syncDay(key); renderCal(); openDay(key);
 }
-function addProc(key){
-  const pac = document.getElementById('np-pac').value.trim();
-  const cir = document.getElementById('np-cir').value.trim();
-  const tipo = document.getElementById('np-tipo').value.trim();
-  const dur = parseInt(document.getElementById('np-dur').value,10) || 120;
-  if (!pac){ alert('Ingresa el nombre del paciente'); return; }
-  if (!state.days[key]) state.days[key] = { team: teamForDate(parseDate(key)), procs: [] };
-  state.days[key].procs = state.days[key].procs || [];
-  state.days[key].procs.push({paciente:pac, cirujano:cir, tipo:tipo||'Cirugía robótica', durMin:dur});
-  save(); syncDay(key); openDay(key); renderCal();
+function toggleBlock(key){
+  const day = ensureDay(key);
+  day.blocked = !day.blocked;
+  save(); syncDay(key); renderCal(); openDay(key);
 }
-function delProc(key, i){
-  if (!confirm('¿Eliminar este procedimiento?')) return;
-  state.days[key].procs.splice(i,1);
-  save(); syncDay(key); openDay(key); renderCal();
+function addProc(key, sidx){
+  const pac = (document.getElementById('np-pac-'+sidx)?.value||'').trim();
+  const cir = (document.getElementById('np-cir-'+sidx)?.value||'').trim();
+  const tipo = (document.getElementById('np-tipo-'+sidx)?.value||'').trim();
+  if (!pac && !tipo){ alert('Ingresa al menos el nombre del paciente o el procedimiento'); return; }
+  const day = ensureDay(key);
+  while (day.slots.length <= sidx) day.slots.push({ team:null, procs:[] });
+  const sl = day.slots[sidx];
+  sl.procs.push({ paciente:pac, cirujano:cir, tipo:tipo||'Cirugía robótica', durMin:120, owner:myRut(), team:sl.team||null });
+  save(); syncDay(key); renderCal(); openDay(key);
+}
+// Eliminar un paciente propio (o cualquiera si admin/jefe)
+function delProc(key, sidx, pi){
+  if (!confirm('¿Eliminar este paciente?')) return;
+  const day = ensureDay(key);
+  day.slots[sidx].procs.splice(pi,1);
+  save(); syncDay(key); renderCal(); openDay(key);
+}
+// Solicitar eliminación de un paciente AJENO → queda pendiente de validación
+function requestDel(key, sidx, pi){
+  const reemplazo = prompt('Vas a SUGERIR eliminar un paciente de otro equipo.\n\nOpcional: nombre del paciente que propones poner en su lugar (deja vacío si solo quieres que se elimine):','');
+  if (reemplazo===null) return; // canceló
+  const day = ensureDay(key);
+  const p = day.slots[sidx].procs[pi];
+  p.pendingDel = { by: myRut(), byTeam: (AUTH_DB.session&&AUTH_DB.session.team)||'', reemplazo: (reemplazo||'').trim(), ts: Date.now() };
+  save(); syncDay(key); renderCal(); openDay(key);
+  alert('Solicitud enviada. Quedará pendiente hasta que el administrador o el jefe del programa la valide.');
+}
+function approveDel(key, sidx, pi){
+  if (!isAdminOrJefe()) return;
+  const day = ensureDay(key);
+  const p = day.slots[sidx].procs[pi];
+  const repl = p.pendingDel && p.pendingDel.reemplazo;
+  day.slots[sidx].procs.splice(pi,1);
+  if (repl){ day.slots[sidx].procs.push({ paciente:repl, tipo:'Cirugía robótica', cirujano:'', durMin:120, owner:p.pendingDel.by, team:day.slots[sidx].team||null }); }
+  save(); syncDay(key); renderCal(); openDay(key);
+}
+function rejectDel(key, sidx, pi){
+  if (!isAdminOrJefe()) return;
+  const day = ensureDay(key);
+  delete day.slots[sidx].procs[pi].pendingDel;
+  save(); syncDay(key); renderCal(); openDay(key);
 }
 
 // ── GENERADOR ──
@@ -1105,14 +1237,14 @@ function openGenerator(){
         <input id="g-from" type="date" value="${dKey(new Date())}">
       </div>
       <div style="background:#0f172a;padding:12px;border-radius:8px;font-size:12px;line-height:1.5">
-        <b style="color:#3b82f6">📅 Reglas aplicadas:</b><br>
-        • Lunes <b>impar</b> desde anchor (${dKey(getAnchor())}): <span style="color:var(--da)">D Alto</span><br>
-        • Lunes <b>par</b>: <span style="color:var(--he)">Hepato</span><br>
+        <b style="color:#3b82f6">📅 Distribución sugerida (editable):</b><br>
+        • Lunes: alterna <span style="color:var(--da)">D Alto</span> / <span style="color:var(--he)">Hepato</span><br>
         • Martes / Miércoles / Jueves: <span style="color:var(--ur)">Urología</span><br>
         • Viernes: <span style="color:var(--db)">D Bajo</span><br>
-        • Sábado / Domingo: no se genera
+        • Sábado / Domingo: no se genera<br>
+        <span style="color:#64748b;font-size:11px">Es solo una sugerencia: puedes cambiar el equipo de cualquier día y agregar un 2º equipo.</span>
       </div>
-      <p style="font-size:11px;color:#64748b;margin-top:10px">Los días que ya tengan equipo asignado manual o procedimientos NO serán sobrescritos.</p>
+      <p style="font-size:11px;color:#64748b;margin-top:10px">Los días que ya tengan equipo o pacientes NO serán sobrescritos.</p>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -1131,36 +1263,34 @@ function runGenerator(){
     const dow = (d.getDay()+6)%7;
     if (dow >= 5) continue; // fin de semana
     const k = dKey(d);
-    if (state.days[k] && (state.days[k].team || (state.days[k].procs||[]).length)){
-      skipped++; continue;
-    }
-    state.days[k] = { team: teamForDate(d), procs: [] };
+    const existing = normalizeDay(state.days[k]);
+    if (existing.slots.some(s=>s.team||(s.procs&&s.procs.length))){ skipped++; continue; }
+    // Prellenar con el equipo sugerido (solo el primero); el 2º queda libre.
+    const [t1] = defaultTeamsForDate(d);
+    state.days[k] = { slots: t1 ? [{ team:t1, procs:[] }] : [], blocked:false };
     if (WEB_MODE && SESSION_TOKEN) syncDay(k);
     created++;
   }
+  // Ampliar la ventana visible para abarcar lo generado
+  WEEKS_FWD = Math.max(WEEKS_FWD, weeks + 2);
   save(); closeModal(); renderCal(); renderQueue();
   alert(`✓ Generados ${created} días\n${skipped ? '· '+skipped+' días ya existentes (no sobrescritos)' : ''}`);
 }
 
 // ── EXPORT ──
 function exportCSV(){
-  const rows = [['fecha','dia_semana','equipo','swap','procedimientos','paciente','cirujano','tipo','dur_min']];
-  Object.entries(state.days).sort().forEach(([k,d]) => {
-    if (!d.procs || !d.procs.length){
-      if (d.team){
-        const dt = parseDate(k);
-        rows.push([k, WEEKDAYS[(dt.getDay()+6)%7], d.team==='_blocked'?'BLOQUEADO':(EQUIPOS[d.team]?.short||d.team), '', 0, '', '', '', '']);
-      }
-      return;
-    }
+  const rows = [['fecha','dia_semana','equipo','paciente','cirujano','procedimiento','dur_min']];
+  Object.entries(state.days).sort().forEach(([k,raw]) => {
+    const d = normalizeDay(raw);
     const dt = parseDate(k);
-    d.procs.forEach(p => {
-      rows.push([
-        k, WEEKDAYS[(dt.getDay()+6)%7],
-        d.team==='_blocked'?'BLOQUEADO':(EQUIPOS[d.team]?.short||d.team),
-        d.team !== teamForDate(dt) ? 'SI' : '',
-        d.procs.length, p.paciente||'', p.cirujano||'', p.tipo||'', p.durMin||120
-      ]);
+    const dia = WEEKDAYS[(dt.getDay()+6)%7];
+    if (d.blocked){ rows.push([k, dia, 'BLOQUEADO','','','','']); return; }
+    d.slots.forEach(sl => {
+      const eqName = sl.team ? (EQUIPOS[sl.team]?.short||sl.team) : '—';
+      if (!sl.procs || !sl.procs.length){ rows.push([k, dia, eqName,'','','','']); return; }
+      sl.procs.forEach(p => {
+        rows.push([k, dia, eqName, p.paciente||'', p.cirujano||'', p.tipo||'', p.durMin||120]);
+      });
     });
   });
   const csv = rows.map(r => r.map(v => `"${(v||'').toString().replace(/"/g,'""')}"`).join(',')).join('\n');
@@ -1173,19 +1303,21 @@ function exportCSV(){
 }
 function exportIcs(){
   const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//HDS//RoboticaAgenda//ES'];
-  Object.entries(state.days).sort().forEach(([k,d]) => {
-    if (!d.procs || !d.procs.length) return;
-    const dt = parseDate(k);
+  Object.entries(state.days).sort().forEach(([k,raw]) => {
+    const d = normalizeDay(raw);
+    if (d.blocked) return;
     const yyyymmdd = k.replace(/-/g,'');
-    d.procs.forEach((p,i) => {
-      const eq = EQUIPOS[d.team] || {name:'—'};
-      lines.push('BEGIN:VEVENT');
-      lines.push(`UID:hds-rob-${k}-${i}@hospitaldelsalvador`);
-      lines.push(`DTSTART;VALUE=DATE:${yyyymmdd}`);
-      lines.push(`DTEND;VALUE=DATE:${yyyymmdd}`);
-      lines.push(`SUMMARY:[${eq.name}] ${p.paciente||'—'} · ${p.tipo||''}`);
-      lines.push(`DESCRIPTION:Cirujano: ${p.cirujano||'—'} · Duración: ${p.durMin||120} min`);
-      lines.push('END:VEVENT');
+    d.slots.forEach((sl,si) => {
+      const eq = sl.team ? (EQUIPOS[sl.team]||{name:'—'}) : {name:'Sin equipo'};
+      (sl.procs||[]).forEach((p,i) => {
+        lines.push('BEGIN:VEVENT');
+        lines.push(`UID:hds-rob-${k}-${si}-${i}@hospitaldelsalvador`);
+        lines.push(`DTSTART;VALUE=DATE:${yyyymmdd}`);
+        lines.push(`DTEND;VALUE=DATE:${yyyymmdd}`);
+        lines.push(`SUMMARY:[${eq.name}] ${p.paciente||'—'} · ${p.tipo||''}`);
+        lines.push(`DESCRIPTION:Cirujano: ${p.cirujano||'—'} · Duración: ${p.durMin||120} min`);
+        lines.push('END:VEVENT');
+      });
     });
   });
   lines.push('END:VCALENDAR');
@@ -1199,11 +1331,12 @@ function exportIcs(){
 
 // ── ACCIONES MASIVAS ──
 function clearMonth(){
-  const ym = `${viewMonth.getFullYear()}-${pad(viewMonth.getMonth()+1)}`;
+  if (isViewer()){ alert('Modo solo lectura.'); return; }
+  const ym = `${today0.getFullYear()}-${pad(today0.getMonth()+1)}`;
   const keys = Object.keys(state.days).filter(k => k.startsWith(ym));
-  if (!keys.length){ alert('No hay datos en este mes'); return; }
-  if (!confirm(`¿Borrar ${keys.length} días del mes ${MONTHS[viewMonth.getMonth()]}? Esto borra equipos asignados Y procedimientos.`)) return;
-  keys.forEach(k => delete state.days[k]);
+  if (!keys.length){ alert('No hay datos en el mes actual'); return; }
+  if (!confirm(`¿Borrar ${keys.length} días de ${MONTHS[today0.getMonth()]}? Esto borra equipos asignados Y pacientes.`)) return;
+  keys.forEach(k => { state.days[k] = { slots:[], blocked:false }; syncDay(k); });
   save(); renderCal();
 }
 function clearAll(){
@@ -1225,6 +1358,12 @@ window.addEventListener('DOMContentLoaded', () => {
   authInit();
   renderCal();
   renderQueue();
+  // Scroll infinito de semanas + ir a hoy al abrir
+  const sc = document.getElementById('cal-scroll');
+  if (sc){
+    sc.addEventListener('scroll', _calScrollHandler);
+    setTimeout(() => { const t=document.querySelector('.cal-day.today'); if(t) t.scrollIntoView({block:'center'}); }, 300);
+  }
 
   // Poll periódico: en modo web, refrescar estado cada 60s si hay sesión activa
   if (WEB_MODE){
