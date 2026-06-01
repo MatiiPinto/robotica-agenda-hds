@@ -215,7 +215,7 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <!-- PASO 1: Login -->
     <div id="auth-step-login">
       <div class="auth-step-title">Ingreso al sistema</div>
-      <div class="auth-step-sub">Usa tu RUT y la clave de acceso. Si es tu primera vez, la clave inicial son los primeros 4 dígitos de tu RUT.</div>
+      <div class="auth-step-sub">Usa tu RUT y la clave de acceso. Si es tu primera vez, la clave inicial son los 4 dígitos antes del guión de tu RUT (ej: 16960208-5 → 0208).</div>
       <div class="auth-error" id="auth-err"></div>
       <div class="auth-field">
         <label>RUT</label>
@@ -224,7 +224,7 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
       <div class="auth-field">
         <label>Clave</label>
         <input id="auth-pwd" type="password" placeholder="••••" autocomplete="current-password">
-        <div class="hint">¿Primera vez? Usa los 4 primeros dígitos de tu RUT.</div>
+        <div class="hint">¿Primera vez? Usa los 4 dígitos antes del guión de tu RUT.</div>
       </div>
       <button class="auth-btn" id="auth-login-btn">Ingresar</button>
     </div>
@@ -427,9 +427,11 @@ function normRut(rut){
   if (!rut.includes('-') && rut.length >= 2) rut = rut.slice(0,-1) + '-' + rut.slice(-1);
   return rut;
 }
-// Clave inicial = primeros 4 dígitos del RUT (antes del guión)
+// Clave inicial = 4 dígitos antes del dígito verificador
 function defaultPwd(rut){
-  return (rut||'').replace(/[^0-9]/g,'').slice(0,4);
+  // Clave inicial = 4 dígitos previos al dígito verificador (igual que el backend).
+  // Ej: 16960208-5 → "0208". (Antes usaba los primeros 4, lo que no coincidía.)
+  return (rut||'').replace(/[^0-9kK]/g,'').slice(-5,-1);
 }
 // Buscar funcionario en dotacion.js
 function findStaff(rut){
@@ -525,7 +527,7 @@ async function authTryLogin(){
   } else {
     const def = defaultPwd(rut);
     if (pwd !== def){
-      authError('Clave incorrecta. La clave inicial son los primeros 4 dígitos del RUT.');
+      authError('Clave incorrecta. La clave inicial son los 4 dígitos antes del guión del RUT.');
       return;
     }
     _authPendingTeam = { rut, name: staff.n };
