@@ -55,17 +55,17 @@ a{color:inherit;text-decoration:none}
 .cal-legend .dot.he{background:var(--he)}
 .cal-legend .dot.db{background:var(--db)}
 
-/* Grilla: L-V anchas, Sáb/Dom a 1/4. 5 columnas grandes + 2 angostas */
-.cal-grid{display:grid;grid-template-columns:repeat(5,1fr) .28fr .28fr;gap:6px}
+/* Cada mes es un bloque independiente (no se encadena con el siguiente) */
+.cal-grid{display:flex;flex-direction:column;gap:8px}
+.cal-month{background:rgba(255,255,255,.02);border:1px solid #1e293b;border-radius:12px;padding:10px 10px 12px}
+/* Grilla del mes: L-V anchas, Sáb/Dom a 1/4. 5 columnas grandes + 2 angostas */
+.cal-monthgrid{display:grid;grid-template-columns:repeat(5,1fr) .28fr .28fr;gap:6px}
 .cal-head{font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.6px;text-align:center;padding:4px 0}
 .cal-head.wknd{font-size:8px;color:#475569}
 .cal-scroll{max-height:calc(100vh - 230px);overflow-y:auto;padding-right:4px}
-.cal-week{display:contents}
-/* Separador de mes: una banda con etiqueta, en su propia fila completa */
-.cal-monthsep{grid-column:1 / -1;display:flex;align-items:center;gap:10px;margin:10px 0 2px;color:#93c5fd;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
+/* Título del mes */
+.cal-monthsep{display:flex;align-items:center;gap:10px;margin:2px 0 8px;color:#93c5fd;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
 .cal-monthsep::before,.cal-monthsep::after{content:"";flex:1;border-top:2px dashed #334155}
-/* Separador que respeta días (mes cambia a mitad de semana): solo bajo los días del mes nuevo */
-.cal-day.newmonth{border-top:2px dashed #60a5fa}
 .cal-day{background:#0f172a;border:1px solid #1e293b;border-radius:8px;min-height:118px;padding:6px 7px;display:flex;flex-direction:column;cursor:pointer;transition:.12s;position:relative;overflow:hidden}
 .cal-day:hover{border-color:#475569}
 .cal-day.weekend{min-height:118px;opacity:.5;padding:5px 4px}
@@ -782,6 +782,22 @@ const EQUIPOS = {
 };
 const EQ_ORDER = ['ur','da','he','db'];
 
+// ── Catálogo de instrumental robótico (da Vinci) — desde imagen de inventario ──
+// {ref, nombre, usos} · usos = vida útil (n° de cirugías) del instrumento.
+// Editable/ampliable: agrega o corrige filas aquí.
+const INSTRUMENTAL_CAT = [
+  { ref:'470056', nombre:'Endoscopio 0°',            usos:1  },
+  { ref:'470057', nombre:'Endoscopio 30°',           usos:1  },
+  { ref:'471006', nombre:'Portaagujas Grande',       usos:15 },
+  { ref:'471172', nombre:'Pinza Bipolar Maryland',   usos:14 },
+  { ref:'471205', nombre:'Pinza Bipolar Fenestrada', usos:14 },
+  { ref:'470179', nombre:'Tijera Curva Monopolar',   usos:10 },
+  { ref:'470183', nombre:'Gancho (Hook) Monopolar',  usos:10 },
+  { ref:'471049', nombre:'Pinza Cadiere',            usos:18 },
+  { ref:'471093', nombre:'Pinza ProGrasp',           usos:18 },
+  { ref:'480275', nombre:'Bisturí Harmonic ACE',     usos:1  }
+];
+
 // ── PERSISTENCIA ──
 const STORAGE = 'robagenda_v1';
 let state = { days:{}, queue:{ur:[],da:[],he:[],db:[]}, anchor:null };
@@ -901,56 +917,60 @@ function goToday(){
   if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
-// ── RENDER CALENDARIO (semanas continuas hacia abajo) ──
+// ── RENDER CALENDARIO (un bloque independiente por mes) ──
+// Cada mes se dibuja completo y por separado: empieza en su 1ª semana con
+// relleno vacío y termina en su última, sin compartir fila con otro mes.
 function renderCal(){
   const grid = document.getElementById('cal-grid');
-  const start = mondayOf(new Date(today0.getTime() - WEEKS_BACK*7*86400000));
-  const totalWeeks = WEEKS_BACK + WEEKS_FWD;
-  // Cabecera de columnas (L-V grandes, S/D pequeños)
-  let html = WEEKDAYS.map((w,i) => `<div class="cal-head${i>=5?' wknd':''}">${w}</div>`).join('');
-  let lastMonth = -1;
-  for (let wk=0; wk<totalWeeks; wk++){
-    for (let dd=0; dd<7; dd++){
-      const d = new Date(start.getTime() + (wk*7+dd)*86400000);
-      const dow = (d.getDay()+6)%7;
-      const isWeekend = dow>=5;
-      const isToday = d.getTime()===today0.getTime();
-      const info = getDayInfo(d);
-      // Separador de mes: banda completa cuando la semana ARRANCA en mes nuevo
-      const isNewMonth = d.getMonth()!==lastMonth;
-      if (isNewMonth && dd===0){
-        html += `<div class="cal-monthsep">${MONTHS[d.getMonth()]} ${d.getFullYear()}</div>`;
-      }
-      // Marca de mes nuevo a mitad de semana (día 1 del mes que no cae en lunes)
-      const isFirstOfMonth = d.getDate()===1 && dd!==0;
-      lastMonth = d.getMonth();
-
-      let cls = 'cal-day';
-      if (isWeekend) cls += ' weekend';
-      if (isToday) cls += ' today';
-      if (info.blocked) cls += ' blocked';
-      else if (info.slots[0] && info.slots[0].team && !isWeekend) cls += ' '+info.slots[0].team;
-      if (isFirstOfMonth) cls += ' newmonth';
-
-      let inner = `<div class="day-num"><span>${d.getDate()}${isFirstOfMonth?` <small style="color:#60a5fa">${MONTHS[d.getMonth()].slice(0,3)}</small>`:''}</span></div>`;
-      if (!isWeekend && !info.blocked){
-        const slotsHtml = info.slots.filter(sl=>sl.team||(sl.procs&&sl.procs.length)).map(sl=>{
-          const eq = sl.team ? EQUIPOS[sl.team] : null;
-          const procs = (sl.procs||[]).slice(0,2).map(p=>`<div class="slot-proc${p.pendingDel?' pending':''}">${esc(p.paciente||p.tipo||'(sin info)')}</div>`).join('');
-          const more = (sl.procs||[]).length>2 ? `<div class="slot-proc" style="color:#94a3b8">+${sl.procs.length-2} más</div>`:'';
-          return `<div class="cal-slot" style="--slot-c:${eq?eq.color:'#64748b'}">
-            ${eq?`<span class="slot-tag">${eq.short}</span>`:''}${procs}${more}</div>`;
+  const cellDay = (d)=>{
+    const dow=(d.getDay()+6)%7, isWeekend=dow>=5, isToday=d.getTime()===today0.getTime();
+    const info=getDayInfo(d);
+    let cls='cal-day';
+    if (isWeekend) cls+=' weekend';
+    if (isToday) cls+=' today';
+    if (info.blocked) cls+=' blocked';
+    else if (info.slots[0] && info.slots[0].team && !isWeekend) cls+=' '+info.slots[0].team;
+    let inner=`<div class="day-num"><span>${d.getDate()}</span></div>`;
+    if (!isWeekend && !info.blocked){
+      const slotsHtml = info.slots.filter(sl=>sl.team||(sl.procs&&sl.procs.length)).map(sl=>{
+        const eq = sl.team ? EQUIPOS[sl.team] : null;
+        const procs = (sl.procs||[]).slice(0,2).map(p=>{
+          const ni=(p.instr||[]).reduce((s,it)=>s+(it.cant||1),0);
+          return `<div class="slot-proc${p.pendingDel?' pending':''}">${esc(p.paciente||p.tipo||'(sin info)')}${p.proctor?` <span style="color:#fbbf24" title="Con proctor">🎓</span>`:''}${ni?` <span style="color:#7dd3fc">🔧${ni}</span>`:''}</div>`;
         }).join('');
-        inner += `<div class="slots">${slotsHtml}</div>`;
-        if (dayHasPending(info)) inner += `<span class="pend-flag" title="Solicitud de eliminación pendiente">⚠</span>`;
-      } else if (info.blocked){
-        inner += `<div class="slots" style="color:#64748b;font-size:9px;font-style:italic;padding-top:4px">Bloqueado</div>`;
-      }
-      html += `<div class="${cls}" data-date="${dKey(d)}" onclick="openDay('${dKey(d)}')">${inner}</div>`;
+        const more = (sl.procs||[]).length>2 ? `<div class="slot-proc" style="color:#94a3b8">+${sl.procs.length-2} más</div>`:'';
+        return `<div class="cal-slot" style="--slot-c:${eq?eq.color:'#64748b'}">
+          ${eq?`<span class="slot-tag">${eq.short}</span>`:''}${procs}${more}</div>`;
+      }).join('');
+      inner += `<div class="slots">${slotsHtml}</div>`;
+      if (dayHasPending(info)) inner += `<span class="pend-flag" title="Solicitud de eliminación pendiente">⚠</span>`;
+    } else if (info.blocked){
+      inner += `<div class="slots" style="color:#64748b;font-size:9px;font-style:italic;padding-top:4px">Bloqueado</div>`;
     }
+    return `<div class="${cls}" data-date="${dKey(d)}" onclick="openDay('${dKey(d)}')">${inner}</div>`;
+  };
+
+  // Rango de meses: desde el mes anterior a hoy, hasta ~ WEEKS_FWD/4 meses adelante
+  const monthsFwd = Math.max(3, Math.ceil(WEEKS_FWD/4));
+  let html='';
+  for (let mo=-WEEKS_BACK; mo<=monthsFwd; mo++){
+    const first = new Date(today0.getFullYear(), today0.getMonth()+mo, 1);
+    const y=first.getFullYear(), m=first.getMonth();
+    // Bloque del mes: título + cabecera de columnas propia + grilla
+    html += `<div class="cal-month">
+      <div class="cal-monthsep">${MONTHS[m]} ${y}</div>
+      <div class="cal-monthgrid">
+        ${WEEKDAYS.map((w,i)=>`<div class="cal-head${i>=5?' wknd':''}">${w}</div>`).join('')}`;
+    const startDow=(first.getDay()+6)%7;            // celdas vacías antes del día 1
+    for (let i=0;i<startDow;i++) html+=`<div class="cal-day empty"></div>`;
+    const daysIn=new Date(y,m+1,0).getDate();
+    for (let dnum=1;dnum<=daysIn;dnum++){ html+=cellDay(new Date(y,m,dnum)); }
+    // completar última fila
+    const totalCells=startDow+daysIn; const tail=(7-(totalCells%7))%7;
+    for (let i=0;i<tail;i++) html+=`<div class="cal-day empty"></div>`;
+    html += `</div></div>`;
   }
   grid.innerHTML = html;
-  // Etiqueta de mes en toolbar = mes del día de hoy o del centro visible
   document.getElementById('month-name').textContent = `${MONTHS[today0.getMonth()]} ${today0.getFullYear()}`;
   updateKpis();
 }
@@ -1092,9 +1112,19 @@ function openDay(key){
           const canHardDel = mine || isAdminOrJefe();
           let badge = '';
           if (p.pendingDel) badge = `<span style="color:#fbbf24;font-size:9px">⚠ eliminación pendiente${p.pendingDel.reemplazo?` → propone: ${esc(p.pendingDel.reemplazo)}`:''}</span>`;
+          const instr = p.instr||[];
+          const nInstr = instr.reduce((s,it)=>s+(it.cant||1),0);
+          const instrLine = instr.length
+            ? `<br><span style="color:#7dd3fc;font-size:10px">🔧 ${instr.map(it=>esc(it.nombre)+(it.cant>1?' ×'+it.cant:'')).join(', ')}</span>`
+            : '';
+          const proctorLine = p.proctor
+            ? `<br><span style="color:#fbbf24;font-size:10px">🎓 Con proctor${p.proctorName?': '+esc(p.proctorName):''}</span>`
+            : '';
           return `<div class="proc-row" style="border-color:${eq?eq.color:'#3b82f6'}${p.pendingDel?';opacity:.7':''}">
-            <div><b>${esc(p.paciente||p.tipo||'(sin info)')}</b><small>${esc(p.tipo||'')}${p.cirujano?' · '+esc(p.cirujano):''}${p.owner&&p.owner!==myRut()?' · ['+esc((p.team&&EQUIPOS[p.team]?EQUIPOS[p.team].short:''))+']':''}</small>${badge?'<br>'+badge:''}</div>
+            <div><b>${esc(p.paciente||p.tipo||'(sin info)')}</b><small>${esc(p.tipo||'')}${p.cirujano?' · '+esc(p.cirujano):''}${p.owner&&p.owner!==myRut()?' · ['+esc((p.team&&EQUIPOS[p.team]?EQUIPOS[p.team].short:''))+']':''}</small>${proctorLine}${instrLine}${badge?'<br>'+badge:''}</div>
             <div style="display:flex;gap:4px">
+              ${!ro ? `<button class="del" title="${p.proctor?'Con proctor (clic para quitar)':'Marcar con proctor'}" style="background:${p.proctor?'#f59e0b':'#334155'};color:#fff" onclick="toggleProctor('${key}',${sidx},${pi})">🎓</button>`:''}
+              ${!ro ? `<button class="del" title="Instrumental (${nInstr})" style="background:#0e7490;color:#fff;${nInstr?'font-weight:700':''}" onclick="openInstr('${key}',${sidx},${pi})">🔧${nInstr?' '+nInstr:''}</button>`:''}
               ${p.pendingDel && isAdminOrJefe() ? `<button class="del" title="Aprobar eliminación" style="background:#16a34a" onclick="approveDel('${key}',${sidx},${pi})">✓</button><button class="del" title="Rechazar" onclick="rejectDel('${key}',${sidx},${pi})">✕</button>` : ''}
               ${!ro && !p.pendingDel ? (canHardDel
                   ? `<button class="del" onclick="delProc('${key}',${sidx},${pi})">×</button>`
@@ -1119,6 +1149,12 @@ function openDay(key){
       <div class="field-row" style="margin-top:4px">
         <div class="field"><input id="np-cir-${sidx}" type="text" placeholder="Cirujano (opcional)"></div>
         <div class="field"><input id="np-tipo-${sidx}" type="text" placeholder="Detalle (opcional)"></div>
+      </div>
+      <div class="field-row" style="margin-top:4px;align-items:center">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;white-space:nowrap">
+          <input type="checkbox" id="np-proc-${sidx}" onchange="document.getElementById('np-procn-'+${sidx}).style.display=this.checked?'block':'none'" style="width:15px;height:15px;accent-color:#f59e0b"> 🎓 Con proctor
+        </label>
+        <div class="field"><input id="np-procn-${sidx}" type="text" placeholder="Nombre del proctor (opcional)" style="display:none"></div>
       </div>`:''}
     </div>`;
   }
@@ -1174,11 +1210,13 @@ function addProc(key, sidx){
   const pac = (document.getElementById('np-pac-'+sidx)?.value||'').trim();
   const cir = (document.getElementById('np-cir-'+sidx)?.value||'').trim();
   const tipo = (document.getElementById('np-tipo-'+sidx)?.value||'').trim();
+  const proctor = !!document.getElementById('np-proc-'+sidx)?.checked;
+  const proctorName = (document.getElementById('np-procn-'+sidx)?.value||'').trim();
   if (!pac && !tipo){ alert('Ingresa al menos el nombre del paciente o el procedimiento'); return; }
   const day = ensureDay(key);
   while (day.slots.length <= sidx) day.slots.push({ team:null, procs:[] });
   const sl = day.slots[sidx];
-  sl.procs.push({ paciente:pac, cirujano:cir, tipo:tipo||'Cirugía robótica', durMin:120, owner:myRut(), team:sl.team||null });
+  sl.procs.push({ paciente:pac, cirujano:cir, tipo:tipo||'Cirugía robótica', durMin:120, owner:myRut(), team:sl.team||null, proctor, proctorName });
   save(); syncDay(key); renderCal(); openDay(key);
 }
 // Eliminar un paciente propio (o cualquiera si admin/jefe)
@@ -1213,6 +1251,103 @@ function rejectDel(key, sidx, pi){
   delete day.slots[sidx].procs[pi].pendingDel;
   save(); syncDay(key); renderCal(); openDay(key);
 }
+
+// Alternar "con proctor" en un procedimiento ya creado (pide nombre opcional al activar)
+function toggleProctor(key, sidx, pi){
+  if (isViewer()) return;
+  const day = ensureDay(key);
+  const p = day.slots[sidx].procs[pi];
+  if (p.proctor){
+    p.proctor = false; p.proctorName = '';
+  } else {
+    p.proctor = true;
+    const n = prompt('Nombre del proctor (opcional, deja vacío si no aplica):', p.proctorName||'');
+    if (n!==null) p.proctorName = n.trim();
+  }
+  save(); syncDay(key); renderCal(); openDay(key);
+}
+
+// ── INSTRUMENTAL POR CIRUGÍA ──────────────────────────────────────────────
+// Edición de borrador en memoria; se persiste al pulsar "Guardar".
+let _instrCtx = null;   // {key,sidx,pi}
+let _instrDraft = {};   // ref -> cant
+
+function openInstr(key, sidx, pi){
+  if (isViewer()) return;
+  const day = ensureDay(key);
+  const p = day.slots[sidx].procs[pi];
+  _instrCtx = { key, sidx, pi };
+  _instrBackKey = key;
+  _instrDraft = {};
+  (p.instr||[]).forEach(it=>{ _instrDraft[it.ref] = it.cant||1; });
+  renderInstrModal(p);
+  document.getElementById('modal-bg').classList.add('open');
+}
+function renderInstrModal(p){
+  const box = document.getElementById('modal-box');
+  const rows = INSTRUMENTAL_CAT.map(it=>{
+    const cant = _instrDraft[it.ref]||0;
+    const on = cant>0;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:7px;margin-bottom:4px;
+        background:${on?'rgba(14,116,144,.18)':'#0f172a'};border:1px solid ${on?'#0e7490':'#334155'}">
+      <input type="checkbox" ${on?'checked':''} onchange="toggleInstr('${it.ref}',this.checked)" style="width:16px;height:16px;accent-color:#22d3ee">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:#e2e8f0">${esc(it.nombre)}</div>
+        <div style="font-size:10px;color:#64748b">REF ${esc(it.ref)} · ${it.usos} uso${it.usos>1?'s':''}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="btn ghost" style="padding:2px 8px" onclick="setInstrCant('${it.ref}',-1)" ${on?'':'disabled'}>−</button>
+        <span id="ic-${it.ref}" style="min-width:20px;text-align:center;font-weight:700;color:${on?'#7dd3fc':'#475569'}">${cant}</span>
+        <button class="btn ghost" style="padding:2px 8px" onclick="setInstrCant('${it.ref}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="modal-head x">
+      <div><h3>🔧 Instrumental</h3><div class="sub">${esc(p.paciente||p.tipo||'Cirugía')}</div></div>
+      <button class="x" onclick="closeInstr()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px">Marca los instrumentos que se usarán e indica la cantidad.</div>
+      ${rows}
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeInstr()">Cancelar</button>
+      <button class="btn" onclick="saveInstr()">💾 Guardar instrumental</button>
+    </div>`;
+}
+function toggleInstr(ref, checked){
+  _instrDraft[ref] = checked ? (_instrDraft[ref]||1) : 0;
+  if (!checked) delete _instrDraft[ref];
+  _refreshInstrRow(ref);
+}
+function setInstrCant(ref, delta){
+  const v = Math.max(0, (_instrDraft[ref]||0) + delta);
+  if (v===0) delete _instrDraft[ref]; else _instrDraft[ref]=v;
+  _refreshInstrRow(ref);
+}
+function _refreshInstrRow(ref){
+  // re-render simple del modal para reflejar estado
+  const ctx=_instrCtx; if(!ctx) return;
+  const p = ensureDay(ctx.key).slots[ctx.sidx].procs[ctx.pi];
+  renderInstrModal(p);
+}
+function saveInstr(){
+  if (!_instrCtx) return;
+  const {key,sidx,pi} = _instrCtx;
+  const day = ensureDay(key);
+  const p = day.slots[sidx].procs[pi];
+  p.instr = INSTRUMENTAL_CAT.filter(it=>_instrDraft[it.ref]>0)
+    .map(it=>({ ref:it.ref, nombre:it.nombre, cant:_instrDraft[it.ref] }));
+  _instrCtx=null; _instrDraft={}; _instrBackKey=null;
+  save(); syncDay(key); renderCal(); openDay(key);
+}
+function closeInstr(){
+  _instrCtx=null; _instrDraft={};
+  if (_instrBackKey) { const k=_instrBackKey; _instrBackKey=null; openDay(k); }
+  else closeModal();
+}
+let _instrBackKey=null;
 
 // ── GENERADOR ──
 function openGenerator(){
@@ -1279,17 +1414,19 @@ function runGenerator(){
 
 // ── EXPORT ──
 function exportCSV(){
-  const rows = [['fecha','dia_semana','equipo','paciente','cirujano','procedimiento','dur_min']];
+  const rows = [['fecha','dia_semana','equipo','paciente','cirujano','procedimiento','dur_min','proctor','instrumental']];
   Object.entries(state.days).sort().forEach(([k,raw]) => {
     const d = normalizeDay(raw);
     const dt = parseDate(k);
     const dia = WEEKDAYS[(dt.getDay()+6)%7];
-    if (d.blocked){ rows.push([k, dia, 'BLOQUEADO','','','','']); return; }
+    if (d.blocked){ rows.push([k, dia, 'BLOQUEADO','','','','','','']); return; }
     d.slots.forEach(sl => {
       const eqName = sl.team ? (EQUIPOS[sl.team]?.short||sl.team) : '—';
-      if (!sl.procs || !sl.procs.length){ rows.push([k, dia, eqName,'','','','']); return; }
+      if (!sl.procs || !sl.procs.length){ rows.push([k, dia, eqName,'','','','','','']); return; }
       sl.procs.forEach(p => {
-        rows.push([k, dia, eqName, p.paciente||'', p.cirujano||'', p.tipo||'', p.durMin||120]);
+        const instr = (p.instr||[]).map(it=>it.nombre+(it.cant>1?' x'+it.cant:'')).join('; ');
+        const proc = p.proctor ? ('SI'+(p.proctorName?' ('+p.proctorName+')':'')) : 'NO';
+        rows.push([k, dia, eqName, p.paciente||'', p.cirujano||'', p.tipo||'', p.durMin||120, proc, instr]);
       });
     });
   });
