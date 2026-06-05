@@ -245,6 +245,36 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
 .insp-alert-info{background:rgba(239,159,39,.10);border-color:rgba(239,159,39,.35);border-left-color:#EF9F27;color:#FFC169}
 .insp-source{font-size:9.5px;color:#94A3B8;font-style:italic;margin-top:8px;text-align:right}
 .insp-empty{padding:14px;text-align:center;color:#64748B;font-size:12px;font-style:italic}
+
+/* ── ZONA D · Modal día — layout split izquierda/derecha ── */
+.md-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.md-left,.md-right{min-width:0}
+.md-cnt{font-size:12px;font-weight:600;color:#94a3b8;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.md-cap-pill{display:inline-flex;align-items:center;padding:2px 10px;border-radius:10px;font-size:10px;font-weight:600;background:rgba(124,180,255,.18);color:#a8c9ff;letter-spacing:.5px}
+.md-cap-pill.full{background:rgba(226,75,74,.18);color:#FF8B8B}
+.md-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.md-li{border:1px solid #334155;border-left:3px solid #3b82f6;border-radius:6px;padding:9px 10px;background:rgba(255,255,255,.02);display:flex;justify-content:space-between;align-items:flex-start;gap:8px;font-size:12px}
+.md-li-body{flex:1;min-width:0}
+.md-li-tit{font-weight:600;color:#e6eaf3}
+.md-li-sub{font-size:10.5px;color:#94a3b8;margin-top:3px;line-height:1.4}
+.md-li-equipo{display:inline-block;font-size:9.5px;padding:1px 6px;border-radius:5px;background:rgba(124,180,255,.18);color:#a8c9ff;margin-right:6px;letter-spacing:.3px;text-transform:uppercase;font-weight:600}
+.md-li-actions{display:flex;gap:4px;flex-shrink:0}
+.md-form{border:1px dashed #334155;border-radius:8px;padding:10px;background:rgba(255,255,255,.02)}
+.md-form h4{font-size:11px;font-weight:600;color:#7dd3fc;text-transform:uppercase;letter-spacing:.8px;margin:0 0 9px;display:flex;align-items:center;gap:6px}
+.md-form .field{margin-bottom:7px}
+.md-form .field label{display:block;font-size:9.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;font-weight:600}
+.md-form .row2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.md-form input,.md-form select{width:100%;padding:6px 8px;border:1px solid #334155;border-radius:5px;background:#0f172a;color:#e2e8f0;font-size:12px;font-family:inherit}
+.md-form input:focus,.md-form select:focus{outline:none;border-color:#7dd3fc}
+.md-form select:disabled,.md-form input:disabled{opacity:.5;cursor:not-allowed}
+.md-form .submit-row{display:flex;justify-content:flex-end;margin-top:8px}
+.md-form .btn-add{padding:7px 14px;border:0;border-radius:5px;background:linear-gradient(135deg,#3b82f6,#7c3aed);color:#fff;font-weight:600;font-size:12px;cursor:pointer}
+.md-form .btn-add:disabled{background:#475569;cursor:not-allowed;opacity:.6}
+.md-cap-blocked{padding:18px;text-align:center;color:#FFB0B0;font-size:12.5px;background:rgba(226,75,74,.06);border:1px dashed rgba(226,75,74,.35);border-radius:8px}
+.md-empty-right{padding:30px 14px;text-align:center;color:#64748B;font-size:11.5px;font-style:italic;background:rgba(255,255,255,.02);border:1px dashed #334155;border-radius:8px}
+@media (max-width:760px){
+  .md-split{grid-template-columns:1fr;gap:8px}
+}
 </style>
 </head>
 <body>
@@ -1123,109 +1153,240 @@ function nextDayForTeam(t){
   return null;
 }
 
-// ── MODAL DÍA (2 equipos / 2 cirugías) ──
+// ════════════════════════════════════════════════════════════════════════
+// MODAL DÍA · cap 2 cirugías/día · split L/R · dropdowns desde /personas
+// ════════════════════════════════════════════════════════════════════════
+
+// Aplana todas las cirugías del día (de cualquier slot legacy) en una sola lista.
+// Retorna [{proc, sidx, pi}] para mantener compatibilidad con delProc/toggleProctor.
+function _getDayAllProcs(info){
+  const out = [];
+  (info.slots||[]).forEach((sl, sidx) => {
+    (sl.procs||[]).forEach((p, pi) => {
+      out.push({ proc: p, sidx, pi });
+    });
+  });
+  return out;
+}
+
+// Cuenta cuántas cirugías ya hay agendadas en el día (suma todos los slots)
+function _countDayProcs(info){
+  return _getDayAllProcs(info).length;
+}
+
 function openDay(key){
   const d = parseDate(key);
   const dow = (d.getDay()+6)%7;
   const info = getDayInfo(d);
   const box = document.getElementById('modal-box');
-  const headCls = info.blocked ? 'x' : (info.slots[0]?.team || 'x');
+  // Color del header: usa el del equipo de la 1ra cirugía o gris si vacío
+  const firstProc = _getDayAllProcs(info)[0];
+  const headCls = info.blocked ? 'x' : (firstProc && firstProc.proc.team ? firstProc.proc.team : 'x');
   const dateLong = `${WEEKDAYS[dow]} ${d.getDate()} de ${MONTHS[d.getMonth()].toLowerCase()} ${d.getFullYear()}`;
   const ro = isViewer();
+  const nProcs = _countDayProcs(info);
+  const capLleno = nProcs >= CAP_CIRUGIAS_POR_DIA;
 
-  // Render de cada slot de equipo
-  function slotBlock(sl, sidx){
-    const eq = sl.team ? EQUIPOS[sl.team] : null;
-    const procsHtml = (sl.procs||[]).length
-      ? sl.procs.map((p,pi) => {
-          const mine = p.owner===myRut() || !p.owner;
-          const canHardDel = mine || isAdminOrJefe();
-          let badge = '';
-          if (p.pendingDel) badge = `<span style="color:#fbbf24;font-size:9px">⚠ eliminación pendiente${p.pendingDel.reemplazo?` → propone: ${esc(p.pendingDel.reemplazo)}`:''}</span>`;
-          const instr = p.instr||[];
-          const nInstr = instr.reduce((s,it)=>s+(it.cant||1),0);
-          const instrLine = instr.length
-            ? `<br><span style="color:#7dd3fc;font-size:10px">🔧 ${instr.map(it=>esc(it.nombre)+(it.cant>1?' ×'+it.cant:'')).join(', ')}</span>`
-            : '';
-          const proctorLine = p.proctor
-            ? `<br><span style="color:#fbbf24;font-size:10px">🎓 Con proctor${p.proctorName?': '+esc(p.proctorName):''}</span>`
-            : '';
-          const inspLine = (p.insumosProc&&p.insumosProc.length)
-            ? `<br><span style="color:#a8c9ff;font-size:10px">📦 ${p.insumosProc.map(l=>esc(l.nombre)+(l.usos>1?' ×'+l.usos:'')).join(', ')}</span>`
-            : '';
-          return `<div class="proc-row" style="border-color:${eq?eq.color:'#3b82f6'}${p.pendingDel?';opacity:.7':''}">
-            <div><b>${esc(p.paciente||p.tipo||'(sin info)')}</b><small>${esc(p.tipo||'')}${p.cirujano?' · '+esc(p.cirujano):''}${p.owner&&p.owner!==myRut()?' · ['+esc((p.team&&EQUIPOS[p.team]?EQUIPOS[p.team].short:''))+']':''}</small>${proctorLine}${inspLine}${instrLine}${badge?'<br>'+badge:''}</div>
-            <div style="display:flex;gap:4px">
-              ${!ro ? `<button class="del" title="${p.proctor?'Con proctor (clic para quitar)':'Marcar con proctor'}" style="background:${p.proctor?'#f59e0b':'#334155'};color:#fff" onclick="toggleProctor('${key}',${sidx},${pi})">🎓</button>`:''}
-              ${!ro ? `<button class="del" title="Instrumental (${nInstr})" style="background:#0e7490;color:#fff;${nInstr?'font-weight:700':''}" onclick="openInstr('${key}',${sidx},${pi})">🔧${nInstr?' '+nInstr:''}</button>`:''}
-              ${p.pendingDel && isAdminOrJefe() ? `<button class="del" title="Aprobar eliminación" style="background:#16a34a" onclick="approveDel('${key}',${sidx},${pi})">✓</button><button class="del" title="Rechazar" onclick="rejectDel('${key}',${sidx},${pi})">✕</button>` : ''}
-              ${!ro && !p.pendingDel ? (canHardDel
-                  ? `<button class="del" onclick="delProc('${key}',${sidx},${pi})">×</button>`
-                  : `<button class="del" title="Sugerir eliminación (requiere validación)" style="background:#7c2d12" onclick="requestDel('${key}',${sidx},${pi})">⚠</button>`) : ''}
-            </div>
-          </div>`;
+  // ── Lista de cirugías ya agendadas (lado izquierdo) ──
+  function renderProcsList(){
+    const all = _getDayAllProcs(info);
+    if (!all.length) {
+      return '<div class="md-empty-right" style="margin-bottom:10px">Sin cirugías agendadas. Usá el formulario abajo para programar la primera.</div>';
+    }
+    return '<div class="md-list">' + all.map(({proc:p, sidx, pi}) => {
+      const mine = p.owner===myRut() || !p.owner;
+      const canHardDel = mine || isAdminOrJefe();
+      const eq = p.team && EQUIPOS[p.team] ? EQUIPOS[p.team] : null;
+      const eqBadge = eq ? `<span class="md-li-equipo" style="background:${eq.color}33;color:${eq.color}">${eq.short||eq.name}</span>` : '';
+      const proctorLine = p.proctor ? `<br>🎓 Proctor: ${esc(p.proctorName||'(sin nombre)')}` : '';
+      const insLine = (p.insumosProc && p.insumosProc.length)
+        ? `<br>📦 ${p.insumosProc.length} insumos descontados`
+        : '';
+      const pendBadge = p.pendingDel ? `<br><span style="color:#fbbf24;font-size:9.5px">⚠ eliminación pendiente</span>` : '';
+      const borderColor = eq ? eq.color : '#3b82f6';
+      return `<div class="md-li" style="border-left-color:${borderColor}${p.pendingDel?';opacity:.7':''}">
+        <div class="md-li-body">
+          <div class="md-li-tit">${eqBadge}${esc(p.paciente||p.tipo||'(sin nombre)')}</div>
+          <div class="md-li-sub">${esc(p.procedimiento||p.tipo||'Cirugía robótica')}${p.cirujano?' · '+esc(p.cirujano):''}${proctorLine}${insLine}${pendBadge}</div>
+        </div>
+        <div class="md-li-actions">
+          ${p.pendingDel && isAdminOrJefe() ? `<button class="del" title="Aprobar" style="background:#16a34a" onclick="approveDel('${key}',${sidx},${pi})">✓</button><button class="del" title="Rechazar" onclick="rejectDel('${key}',${sidx},${pi})">✕</button>` : ''}
+          ${!ro && !p.pendingDel ? (canHardDel
+              ? `<button class="del" title="Eliminar" onclick="delProc('${key}',${sidx},${pi})">×</button>`
+              : `<button class="del" title="Sugerir eliminación" style="background:#7c2d12" onclick="requestDel('${key}',${sidx},${pi})">⚠</button>`) : ''}
+        </div>
+      </div>`;
+    }).join('') + '</div>';
+  }
+
+  // ── Formulario de nueva cirugía (lado izquierdo, debajo de la lista) ──
+  function renderForm(){
+    if (ro) return '';
+    if (info.blocked) return '';
+    if (capLleno) {
+      return `<div class="md-cap-blocked">Cap del día completo (${CAP_CIRUGIAS_POR_DIA} cirugías). Para agendar otra, eliminá una existente o programá otro día.</div>`;
+    }
+    const personas = _personasCache;
+    const cirujanosOpts = personas.cirujanos.length
+      ? '<option value="">— Seleccionar cirujano —</option>' +
+        personas.cirujanos.map(c => `<option value="${esc(c.nombre)}" data-eq="${c.equipo_id||''}">${esc(c.nombre)} · ${esc(c.especialidad)}</option>`).join('')
+      : '<option value="">(cargando cirujanos…)</option>';
+    const procsOpts = personas.procedimientos.length
+      ? '<option value="">— Seleccionar procedimiento —</option>' +
+        personas.procedimientos.map(p => {
+          const huella = p.tiene_huella ? ' ✓' : ' (genérico)';
+          return `<option value="${esc(p.nombre)}" data-eq="${p.equipo_id||''}" data-huella="${p.tiene_huella?'1':'0'}">${esc(p.nombre)}${huella}</option>`;
         }).join('')
-      : '<div style="color:#64748b;font-size:11px;padding:6px;text-align:center;font-style:italic">Sin pacientes</div>';
-    return `<div style="border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:10px;border-left:3px solid ${eq?eq.color:'#64748b'}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <select ${ro?'disabled':''} onchange="setSlotTeam('${key}',${sidx},this.value)" style="flex:1;padding:5px 7px;border:1px solid #334155;border-radius:5px;background:#0f172a;color:#e2e8f0;font-size:12px">
-          <option value="">— Equipo ${sidx+1} —</option>
-          ${EQ_ORDER.map(t=>`<option value="${t}" ${t===sl.team?'selected':''}>${EQUIPOS[t].ico} ${EQUIPOS[t].name}</option>`).join('')}
-        </select>
-        ${!ro && (sl.team||(sl.procs&&sl.procs.length)) ? `<button class="del" title="Quitar este bloque" onclick="removeSlot('${key}',${sidx})">×</button>`:''}
+      : '<option value="">(cargando procedimientos…)</option>';
+    const equiposOpts = personas.equipos.map(e =>
+      `<option value="${e.id}">${esc(e.nombre)}</option>`
+    ).join('');
+    const proctorsOpts = personas.proctors.map(p =>
+      `<option value="${esc(p.nombre)}">${esc(p.nombre)}</option>`
+    ).join('');
+    return `<div class="md-form" id="np-form">
+      <h4>+ Programar cirugía <span style="font-size:9px;color:#64748b;letter-spacing:.2px">(${nProcs}/${CAP_CIRUGIAS_POR_DIA} hoy)</span></h4>
+      <div class="field">
+        <label>Paciente · iniciales o referencia corta</label>
+        <input id="np-pac" type="text" placeholder="Ej: JPS · 32 años" maxlength="60">
       </div>
-      <div class="proc-list">${procsHtml}</div>
-      ${!ro ? `<div class="field-row" style="margin-top:8px">
-        <div class="field"><input id="np-pac-${sidx}" type="text" placeholder="Paciente o procedimiento"></div>
-        <button class="btn" style="white-space:nowrap" onclick="addProc('${key}',${sidx})">+ Agregar</button>
+      <div class="row2">
+        <div class="field">
+          <label>Equipo</label>
+          <select id="np-eq" onchange="_onEquipoChange()">
+            <option value="">— Equipo —</option>
+            ${equiposOpts}
+          </select>
+        </div>
+        <div class="field">
+          <label>Cirujano</label>
+          <select id="np-cir" onchange="_onCirujanoChange()">${cirujanosOpts}</select>
+        </div>
       </div>
-      <div class="field-row" style="margin-top:4px">
-        <div class="field"><input id="np-cir-${sidx}" type="text" placeholder="Cirujano (opcional)"></div>
-        <div class="field"><input id="np-tipo-${sidx}" type="text" placeholder="Detalle (opcional)"></div>
+      <div class="field">
+        <label>Procedimiento <span style="color:#64748b;text-transform:none;letter-spacing:0">· ✓ = con huella de insumos automática</span></label>
+        <select id="np-proc" onchange="_onProcedimientoChange()">${procsOpts}</select>
       </div>
-      <div class="field-row" style="margin-top:4px;align-items:center">
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;white-space:nowrap">
-          <input type="checkbox" id="np-proc-${sidx}" onchange="document.getElementById('np-procn-'+${sidx}).style.display=this.checked?'block':'none'" style="width:15px;height:15px;accent-color:#f59e0b"> 🎓 Con proctor
+      <div class="field" style="display:flex;align-items:center;gap:10px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#cbd5e1;cursor:pointer;text-transform:none;letter-spacing:0;margin:0">
+          <input type="checkbox" id="np-proctor-chk" onchange="_onProctorToggle()" style="width:15px;height:15px;accent-color:#f59e0b;margin:0"> 🎓 Con proctor
         </label>
-        <div class="field"><input id="np-procn-${sidx}" type="text" placeholder="Nombre del proctor (opcional)" style="display:none"></div>
-      </div>
-      <!-- ZONA B · Panel de insumos: selector de procedimiento + panel -->
-      <div class="field" style="margin-top:6px">
-        <select id="np-procd-${sidx}" onchange="renderPanelInsumos(${sidx}, this.value)" style="width:100%;padding:6px 8px;border:1px solid #334155;border-radius:5px;background:#0f172a;color:#e2e8f0;font-size:12px">
-          <option value="">📦 Procedimiento (carga insumos automáticos)…</option>
-          ${Object.keys(CATALOGO_INSUMOS).map(pr=>`<option value="${pr}">${pr}</option>`).join('')}
+        <select id="np-proctor" style="flex:1;display:none">
+          <option value="">— Seleccionar proctor —</option>
+          ${proctorsOpts}
         </select>
       </div>
-      <div id="inspPanel-${sidx}" class="insp-card" style="display:none">
-        <p class="insp-h"><span class="insp-h-l">📦 Insumos a usar</span><span class="insp-toggle">auto + editable</span></p>
-        <div class="insp-empty">Seleccioná un procedimiento para ver los insumos requeridos.</div>
-      </div>`:''}
+      <div class="submit-row">
+        <button class="btn-add" id="np-submit" onclick="addProc('${key}',0)">+ Agregar cirugía</button>
+      </div>
     </div>`;
   }
 
-  // Slots a mostrar: los existentes + uno vacío si hay menos de 2 (para agregar 2º equipo)
-  const slots = info.slots.slice();
-  while (slots.length < 2) slots.push({ team:null, procs:[] });
+  // ── Panel derecho: insumos del procedimiento seleccionado ──
+  function renderRight(){
+    if (info.blocked || ro || capLleno) {
+      return '<div class="md-empty-right">El panel de insumos aparece acá cuando seleccionás un procedimiento en el formulario de la izquierda.</div>';
+    }
+    return `<div id="inspPanel-0" class="insp-card" style="margin-top:0">
+      <p class="insp-h"><span class="insp-h-l">📦 Insumos a usar</span><span class="insp-toggle">auto + editable</span></p>
+      <div class="insp-empty">Seleccioná un procedimiento para ver los insumos requeridos y el descuento proyectado.</div>
+    </div>`;
+  }
 
   box.innerHTML = `
     <div class="modal-head ${headCls}">
       <div>
         <h3>${info.blocked ? '🚫 Día bloqueado' : dateLong}</h3>
-        <div class="sub">${dow>=5?'Fin de semana':'Hasta 2 equipos pueden operar este día'}</div>
+        <div class="sub">${dow>=5?'Fin de semana':`Máximo ${CAP_CIRUGIAS_POR_DIA} cirugías por día`}</div>
       </div>
       <button class="x" onclick="closeModal()">×</button>
     </div>
     <div class="modal-body">
       ${info.blocked
         ? `<div style="text-align:center;padding:20px;color:#94a3b8">Día marcado como bloqueado (feriado / sin pabellón).${!ro?'<br><button class="btn ghost" style="margin-top:10px" onclick="toggleBlock(\''+key+'\')">↺ Desbloquear</button>':''}</div>`
-        : slots.map((sl,i)=>slotBlock(sl,i)).join('')}
-      ${!ro && !info.blocked ? `<button class="btn ghost" style="font-size:11px;padding:5px 10px" onclick="toggleBlock('${key}')">🚫 Marcar día como bloqueado</button>`:''}
+        : `<div class="md-cnt">
+            <span class="md-cap-pill ${capLleno?'full':''}">${nProcs}/${CAP_CIRUGIAS_POR_DIA} cirugías</span>
+            <span style="opacity:.7">programadas para este día</span>
+          </div>
+          <div class="md-split">
+            <div class="md-left">
+              ${renderProcsList()}
+              ${renderForm()}
+            </div>
+            <div class="md-right">
+              ${renderRight()}
+            </div>
+          </div>`}
+      ${!ro && !info.blocked && nProcs===0 ? `<div style="margin-top:12px"><button class="btn ghost" style="font-size:11px;padding:5px 10px" onclick="toggleBlock('${key}')">🚫 Marcar día como bloqueado</button></div>`:''}
     </div>
     <div class="modal-foot">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
     </div>`;
   document.getElementById('modal-bg').classList.add('open');
 }
+
+// ── Handlers del nuevo form ──
+
+// Cuando se elige un equipo: filtrar dropdowns de cirujano y procedimiento
+function _onEquipoChange(){
+  const eq = document.getElementById('np-eq')?.value || '';
+  const cirSel = document.getElementById('np-cir');
+  const procSel = document.getElementById('np-proc');
+  if (cirSel) {
+    const cirujanos = eq ? getCirujanosByEquipo(eq) : _personasCache.cirujanos;
+    cirSel.innerHTML = '<option value="">— Seleccionar cirujano —</option>' +
+      cirujanos.map(c => `<option value="${esc(c.nombre)}" data-eq="${c.equipo_id||''}">${esc(c.nombre)} · ${esc(c.especialidad)}</option>`).join('');
+  }
+  if (procSel) {
+    const procs = eq ? getProcedimientosByEquipo(eq) : _personasCache.procedimientos;
+    procSel.innerHTML = '<option value="">— Seleccionar procedimiento —</option>' +
+      procs.map(p => {
+        const huella = p.tiene_huella ? ' ✓' : ' (genérico)';
+        return `<option value="${esc(p.nombre)}" data-eq="${p.equipo_id||''}" data-huella="${p.tiene_huella?'1':'0'}">${esc(p.nombre)}${huella}</option>`;
+      }).join('');
+    // Si había un procedimiento seleccionado, reset del panel
+    renderPanelInsumos(0, '');
+  }
+}
+
+// Cuando se elige un cirujano, auto-completar equipo (si está vacío)
+function _onCirujanoChange(){
+  const cirSel = document.getElementById('np-cir');
+  const eqSel = document.getElementById('np-eq');
+  if (!cirSel || !eqSel) return;
+  const opt = cirSel.options[cirSel.selectedIndex];
+  const eqDelCirujano = opt && opt.getAttribute('data-eq');
+  if (eqDelCirujano && !eqSel.value) {
+    eqSel.value = eqDelCirujano;
+    _onEquipoChange();
+    // Volver a seleccionar el cirujano que ya estaba (porque _onEquipoChange repobló)
+    Array.from(cirSel.options).forEach((o,i) => { if (o.value === opt.value) cirSel.selectedIndex = i; });
+  }
+}
+
+// Cuando se elige un procedimiento, cargar panel insumos + auto-completar equipo
+function _onProcedimientoChange(){
+  const procSel = document.getElementById('np-proc');
+  const eqSel = document.getElementById('np-eq');
+  if (!procSel) return;
+  const opt = procSel.options[procSel.selectedIndex];
+  const procNombre = opt ? opt.value : '';
+  // Auto-completar equipo si está vacío
+  if (eqSel && !eqSel.value && opt) {
+    const eqDelProc = opt.getAttribute('data-eq');
+    if (eqDelProc) eqSel.value = eqDelProc;
+  }
+  // Cargar panel insumos (siempre slot 0 en el nuevo layout)
+  renderPanelInsumos(0, procNombre);
+}
+
+// Mostrar/ocultar dropdown de proctor
+function _onProctorToggle(){
+  const chk = document.getElementById('np-proctor-chk');
+  const sel = document.getElementById('np-proctor');
+  if (chk && sel) sel.style.display = chk.checked ? 'block' : 'none';
+}
+
 function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); }
 document.getElementById('modal-bg').addEventListener('click', e => { if (e.target.id==='modal-bg') closeModal(); });
 document.addEventListener('keydown', e => { if (e.key==='Escape') closeModal(); });
@@ -1250,25 +1411,62 @@ function toggleBlock(key){
   day.blocked = !day.blocked;
   save(); syncDay(key); renderCal(); openDay(key);
 }
+// addProc — agrega una cirugía al día desde el nuevo form (dropdowns).
+// Siempre escribe en slots[0] (concepto "equipo del día" eliminado: el equipo
+// es ahora atributo de cada cirugía). El parámetro sidx se acepta solo por
+// compatibilidad con código legacy (assignFromQueue, drag&drop) que aún lo pasa.
 function addProc(key, sidx){
-  const pac = (document.getElementById('np-pac-'+sidx)?.value||'').trim();
-  const cir = (document.getElementById('np-cir-'+sidx)?.value||'').trim();
-  const tipo = (document.getElementById('np-tipo-'+sidx)?.value||'').trim();
-  const proctor = !!document.getElementById('np-proc-'+sidx)?.checked;
-  const proctorName = (document.getElementById('np-procn-'+sidx)?.value||'').trim();
-  if (!pac && !tipo){ alert('Ingresa al menos el nombre del paciente o el procedimiento'); return; }
+  // Datos del nuevo form
+  const pac      = (document.getElementById('np-pac')?.value || '').trim();
+  const eq       = (document.getElementById('np-eq')?.value || '').trim();
+  const cir      = (document.getElementById('np-cir')?.value || '').trim();
+  const procNom  = (document.getElementById('np-proc')?.value || '').trim();
+  const proctorChk  = !!document.getElementById('np-proctor-chk')?.checked;
+  const proctorName = (document.getElementById('np-proctor')?.value || '').trim();
+
+  // Validación
+  if (!pac) { alert('Ingresá el nombre o referencia del paciente'); return; }
+  if (!eq)  { alert('Seleccioná el equipo'); return; }
+  if (!procNom) { alert('Seleccioná el procedimiento'); return; }
+  if (proctorChk && !proctorName) { alert('Seleccioná el proctor del dropdown'); return; }
+
+  // Cap de cirugías/día (defensa en profundidad — el botón se desactiva igualmente)
   const day = ensureDay(key);
-  while (day.slots.length <= sidx) day.slots.push({ team:null, procs:[] });
-  const sl = day.slots[sidx];
-  // Panel de insumos: si hay procedimiento seleccionado, guardar huella de insumos
-  const insp = _inspState[sidx] && _inspState[sidx].procedimiento ? _inspState[sidx] : null;
-  const newProc = { paciente:pac, cirujano:cir, tipo: tipo || (insp?insp.procedimiento:'Cirugía robótica'), durMin:120, owner:myRut(), team:sl.team||null, proctor, proctorName };
-  if (insp){
-    newProc.procedimiento = insp.procedimiento;
-    newProc.insumosProc = insp.lineas.map(l=>({cod:l.cod, nombre:l.nombre, usos:l.usos}));
-    postProgramacionInsumos({ paciente:pac, fecha:key, cirujano:cir, equipo:sl.team||'', proctor, proctorName }, sidx);
-    _inspState[sidx] = {procedimiento:null, lineas:[]};
+  const totalProcs = (day.slots||[]).reduce((a,s) => a + (s.procs||[]).length, 0);
+  if (totalProcs >= CAP_CIRUGIAS_POR_DIA) {
+    alert(`Cap del día completo (${CAP_CIRUGIAS_POR_DIA} cirugías).`);
+    return;
   }
+
+  // Slot 0 como buffer único; el campo `team` queda en cada proc.
+  if (!day.slots.length) day.slots.push({ team:null, procs:[] });
+  const sl = day.slots[0];
+
+  // Construir la cirugía
+  const insp = _inspState[0] && _inspState[0].procedimiento ? _inspState[0] : null;
+  const newProc = {
+    paciente: pac,
+    cirujano: cir,
+    procedimiento: procNom,
+    tipo: procNom,
+    durMin: 120,
+    owner: myRut(),
+    team: eq,
+    proctor: proctorChk,
+    proctorName: proctorChk ? proctorName : ''
+  };
+  if (insp){
+    newProc.insumosProc = insp.lineas.map(l=>({cod:l.cod, nombre:l.nombre, usos:l.usos}));
+    postProgramacionInsumos({
+      paciente: pac, fecha: key, cirujano: cir, equipo: eq,
+      proctor: proctorChk, proctorName: proctorChk ? proctorName : ''
+    }, 0);
+    _inspState[0] = {procedimiento:null, lineas:[]};
+  } else {
+    // No se seleccionó procedimiento con huella → no descuenta insumos del backend
+    console.warn('[agenda] cirugía agregada sin huella de insumos cargada en panel');
+  }
+
   sl.procs.push(newProc);
   save(); syncDay(key); renderCal(); openDay(key);
 }
@@ -1463,6 +1661,83 @@ const CATALOGO_INSUMOS = {
 
 // Estado del panel por slot (0 y 1)
 let _inspState = { 0:{procedimiento:null,lineas:[]}, 1:{procedimiento:null,lineas:[]} };
+
+// ════════════════════════════════════════════════════════════════════════
+// CATÁLOGOS REMOTOS (cirujanos, procedimientos, proctors, equipos)
+// Vienen del endpoint /personas del Apps Script (bloque 20).
+// Se cargan UNA VEZ al init y se cachean en memoria mientras dura la sesión.
+// ════════════════════════════════════════════════════════════════════════
+const CAP_CIRUGIAS_POR_DIA = 2;
+
+let _personasCache = {
+  ts: 0,
+  cirujanos: [],       // [{nombre, especialidad, equipo_id, equipo_nombre}, ...]
+  procedimientos: [],  // [{nombre, especialidad, equipo_id, equipo_nombre, tiene_huella, ...}, ...]
+  proctors: [],        // [{id, nombre}, ...]
+  equipos: []          // [{id, nombre}, ...]
+};
+
+async function fetchPersonas(forceRefresh){
+  // Cache de 10 minutos. Cambios en DOT/CX rara vez ocurren durante la sesión.
+  const now = Date.now();
+  if (!forceRefresh && _personasCache.cirujanos.length && (now - _personasCache.ts) < 600000) {
+    return _personasCache;
+  }
+  try {
+    const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=personas`);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if (!d || !d.ok) throw new Error('schema inesperado');
+    _personasCache = {
+      ts: now,
+      cirujanos: d.cirujanos || [],
+      procedimientos: d.procedimientos || [],
+      proctors: d.proctors || [],
+      equipos: d.equipos || []
+    };
+    console.log(`[personas] cargados: ${_personasCache.cirujanos.length} cirujanos · ${_personasCache.procedimientos.length} procedimientos · ${_personasCache.proctors.length} proctors`);
+    return _personasCache;
+  } catch(err) {
+    console.warn('[personas] no se pudo cargar desde backend, fallback vacío:', err.message);
+    // Fallback mínimo: equipos hardcoded + proctors hardcoded, sin cirujanos ni procs.
+    // La agenda sigue funcionando con texto libre en esos campos.
+    _personasCache = {
+      ts: now,
+      cirujanos: [],
+      procedimientos: [],
+      proctors: [
+        {id:'hassi',  nombre:'Dr. Hassi'},
+        {id:'musleh', nombre:'Dr. Musleh'},
+        {id:'quezada',nombre:'Dr. Quezada'}
+      ],
+      equipos: [
+        {id:'ur', nombre:'Urología'},
+        {id:'da', nombre:'Digestivo Alto'},
+        {id:'db', nombre:'Digestivo Bajo'},
+        {id:'hp', nombre:'Hepatobiliar'}
+      ]
+    };
+    return _personasCache;
+  }
+}
+
+// Devuelve cirujanos filtrados por equipo (o todos si equipoId es null/undefined)
+function getCirujanosByEquipo(equipoId){
+  if (!equipoId) return _personasCache.cirujanos;
+  return _personasCache.cirujanos.filter(c => c.equipo_id === equipoId);
+}
+
+// Devuelve procedimientos filtrados por equipo (o todos si equipoId es null/undefined)
+function getProcedimientosByEquipo(equipoId){
+  if (!equipoId) return _personasCache.procedimientos;
+  return _personasCache.procedimientos.filter(p => p.equipo_id === equipoId);
+}
+
+// Pre-carga al init para tener los catálogos listos cuando se abra el primer modal.
+// Si falla, no rompe el resto de la app.
+window.addEventListener('DOMContentLoaded', () => {
+  fetchPersonas().catch(e => console.warn('[personas] init falló:', e));
+});
 
 async function fetchCatalogoProcedimiento(procedimiento){
   // Trae la huella de insumos del backend Strattner (bloque 22 · STRATTNER_HUELLA_INSUMOS).
