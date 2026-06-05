@@ -822,45 +822,54 @@ async function authInit(){
 
   setSyncStatus('idle');
 
-  // Modo web: validar token guardado
-  if (WEB_MODE && SESSION_TOKEN && AUTH_DB.session){
-    try {
-      setSyncStatus('sync');
-      const res = await apiCall('getState');
-      if (res.ok){
-        if (res.state){
-          state.days = decodeDaysFromServer(res.state.days || {});
-          state.queue = { ur:[], da:[], he:[], db:[], ...(res.state.queue||{}) };
-          state.anchor = res.state.anchor || null;
-          save();
-        }
-        setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 1000);
-        applySession();
-        document.getElementById('auth-overlay').classList.add('hidden');
-        return;
-      }
-      // Token inválido → limpiar y mostrar login
-      SESSION_TOKEN = null;
-      try { localStorage.removeItem(TOKEN_STORAGE); } catch(e){}
-      AUTH_DB.session = null; saveAuth();
-    } catch(e){
-      setSyncStatus('offline');
-      // En modo web sin conexión: si hay sesión local, permitimos modo offline read-only
-      if (AUTH_DB.session && AUTH_DB.session.rut){
-        AUTH_DB.session.team = '_viewer';
-        applySession();
-        document.getElementById('auth-overlay').classList.add('hidden');
-        return;
-      }
-    }
-  }
+  // ─── Auto-login optimista ───
+  // Si hay sesión local de <30 días, entrar INMEDIATAMENTE y validar en background.
+  // Así el usuario no espera el roundtrip al servidor para ver la app.
+  const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 días
+  const sesionLocalValida = AUTH_DB.session && AUTH_DB.session.rut && AUTH_DB.session.since &&
+    (Date.now() - AUTH_DB.session.since) < SESSION_TTL_MS;
 
-  // Modo local o sin sesión válida
-  if (!WEB_MODE && AUTH_DB.session && AUTH_DB.session.rut && AUTH_DB.profiles[AUTH_DB.session.rut]){
+  if (sesionLocalValida) {
     applySession();
     document.getElementById('auth-overlay').classList.add('hidden');
-  } else {
-    showAuthStep('login');
+
+    // Validación en background (no bloquea UI)
+    if (WEB_MODE && SESSION_TOKEN) {
+      setSyncStatus('sync');
+      apiCall('getState').then(res => {
+        if (res.ok) {
+          if (res.state) {
+            state.days = decodeDaysFromServer(res.state.days || {});
+            state.queue = { ur:[], da:[], he:[], db:[], ...(res.state.queue||{}) };
+            state.anchor = res.state.anchor || null;
+            save();
+            try { renderCal(); renderQueue(); } catch(e){}
+          }
+          setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 1000);
+        } else {
+          // Token inválido: avisar pero no expulsar — al próximo F5 pedirá login
+          console.warn('[auth] token inválido, se requerirá relogin en próxima recarga');
+          SESSION_TOKEN = null;
+          try { localStorage.removeItem(TOKEN_STORAGE); } catch(e){}
+          setSyncStatus('idle');
+        }
+      }).catch(e => {
+        // Sin conexión: queda en modo local. Si pierdes conexión sólida, degradás a viewer.
+        setSyncStatus('offline');
+      });
+    }
+    return;
+  }
+
+  // ─── Sin sesión válida: pedir login (con RUT pre-rellenado) ───
+  showAuthStep('login');
+  if (AUTH_DB.session && AUTH_DB.session.rut) {
+    const rutInput = document.getElementById('auth-rut');
+    if (rutInput) {
+      rutInput.value = AUTH_DB.session.rut;
+      // Saltar foco directo a la clave (RUT ya está)
+      setTimeout(() => document.getElementById('auth-pwd')?.focus(), 80);
+    }
   }
 }
 window.authLogout = authLogout;
@@ -1814,41 +1823,53 @@ window.addEventListener('DOMContentLoaded', () => {
   fetchPersonas().catch(e => console.warn('[personas] init falló:', e));
 });
 
+// Catálogo canon de los 6 instrumentos reutilizables del stock HDS.
+// El panel SIEMPRE muestra estos 6, ya sea con su valor de huella o con usos=0
+// (editables por el médico al armar la cirugía).
+const INSTRUMENTOS_CANON = [
+  { cod: '471006', nombre: 'Porta Aguja (Large Needle Driver)' },
+  { cod: '471172', nombre: 'Pinza Bipolar Maryland' },
+  { cod: '471205', nombre: 'Pinza Bipolar Fenestrada' },
+  { cod: '470179', nombre: 'Tijera Curva Monopolar' },
+  { cod: '471049', nombre: 'Pinza Cadiere' },
+  { cod: '471093', nombre: 'Pinza ProGrasp' }
+];
+
 async function fetchCatalogoProcedimiento(procedimiento){
-  // Trae la huella de insumos del backend Strattner (bloque 22 · STRATTNER_HUELLA_INSUMOS).
-  // Filtra a los 6 INSTRUMENTOS REUTILIZABLES del stock oficial HDS:
-  //   471006 · Porta Aguja (Large Needle Driver)
-  //   471172 · Pinza Bipolar Maryland
-  //   471205 · Pinza Bipolar Fenestrada
-  //   470179 · Tijera Curva Monopolar
-  //   471049 · Pinza Cadiere
-  //   471093 · Pinza ProGrasp
-  // Excluye descartables (Tip Cover, Manga Brazo, Sello Cánula, Arm Drape — usos=1)
-  // y el Gancho Monopolar 470183 (queda fuera del rastreo proyectado por decisión operativa).
-  const CODIGOS_RASTREADOS = ['471006','471172','471205','470179','471049','471093'];
+  // Trae la huella del backend y la "mergea" con los 6 instrumentos canon.
+  // El médico ve SIEMPRE los 6, con los usos pre-rellenados según huella
+  // (y 0 para los no incluidos en la huella, que puede subir manualmente).
+  const codigosCanon = INSTRUMENTOS_CANON.map(i => i.cod);
+  let huellaPorCod = {};  // {cod: usos_proyectados}
+
   try {
     const url = `${INSUMOS_APPS_SCRIPT_URL}?action=catalogoInsumosProc&proc=${encodeURIComponent(procedimiento)}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error('HTTP '+r.status);
     const d = await r.json();
     if (!d || !d.ok || !Array.isArray(d.insumos)) throw new Error('schema inesperado');
-    // Schema backend: { cod, nombre, usos_proyectados, usos_por_unidad, precio_neto }
-    // Filtrar a los 6 códigos rastreados (instrumentos reutilizables del stock HDS)
-    return d.insumos
-      .filter(l => CODIGOS_RASTREADOS.indexOf(String(l.cod)) !== -1)
-      .map(l => ({
-        cod: l.cod,
-        nombre: l.nombre,
-        usos: l.usos_proyectados || 1,
-        disp: 0  // se completa después con fetchDisponibilidadActual
-      }));
+    // Solo me interesan los códigos canon de la huella
+    d.insumos.forEach(l => {
+      const cod = String(l.cod);
+      if (codigosCanon.indexOf(cod) !== -1) {
+        huellaPorCod[cod] = l.usos_proyectados || 1;
+      }
+    });
   } catch(err) {
-    console.warn('[insumos] fetchCatalogoProcedimiento fallback local:', err.message);
-    // Fallback: usa CATALOGO_INSUMOS local + filtra por códigos rastreados
-    return (CATALOGO_INSUMOS[procedimiento]||[])
-      .filter(l => CODIGOS_RASTREADOS.indexOf(l.cod) !== -1)
-      .map(l=>({...l}));
+    console.warn('[insumos] fetchCatalogoProcedimiento sin backend, uso fallback local:', err.message);
+    // Fallback con catálogo local (si existe el procedimiento)
+    (CATALOGO_INSUMOS[procedimiento]||[]).forEach(l => {
+      if (codigosCanon.indexOf(l.cod) !== -1) huellaPorCod[l.cod] = l.usos || 1;
+    });
   }
+
+  // Merge canon: los 6 SIEMPRE aparecen, con su huella o usos=0
+  return INSTRUMENTOS_CANON.map(item => ({
+    cod: item.cod,
+    nombre: item.nombre,
+    usos: huellaPorCod[item.cod] != null ? huellaPorCod[item.cod] : 0,
+    disp: 0  // se completa después con fetchDisponibilidadActual
+  }));
 }
 // Cache de disponibilidad: la planilla casi no cambia mientras dura el formulario.
 // 60s de TTL es suficiente para evitar re-fetch al cambiar de procedimiento.
@@ -1896,27 +1917,38 @@ function pintarPanelInsumos(sidx){
   const lineas = _inspState[sidx].lineas;
   const filas = lineas.map((l,i)=>{
     const resta = l.disp - l.usos;
-    let pill, cls='';
-    if (resta <= UMBRAL_QUIEBRE){ pill='<span class="insp-pill insp-pill-crit">QUIEBRE</span>'; cls='insp-crit'; }
-    else if (resta < UMBRAL_ALERTA){ pill='<span class="insp-pill insp-pill-warn">ALERTA</span>'; }
-    else { pill='<span class="insp-pill insp-pill-ok">OK</span>'; }
-    return `<tr class="${cls}">
+    let pill, cls='', rowStyle='';
+    // usos=0 → línea neutra, no descuenta. Estado "Sin uso" (texto tenue).
+    if (l.usos === 0) {
+      pill='<span class="insp-pill" style="background:rgba(255,255,255,.06);color:#64748b">Sin uso</span>';
+      rowStyle='style="opacity:.55"';
+    } else if (resta <= UMBRAL_QUIEBRE){
+      pill='<span class="insp-pill insp-pill-crit">QUIEBRE</span>'; cls='insp-crit';
+    } else if (resta < UMBRAL_ALERTA){
+      pill='<span class="insp-pill insp-pill-warn">ALERTA</span>';
+    } else {
+      pill='<span class="insp-pill insp-pill-ok">OK</span>';
+    }
+    const restaTxt = l.usos === 0 ? '—' : `${l.disp} → <span class="insp-after">${resta}</span>`;
+    return `<tr class="${cls}" ${rowStyle}>
       <td><span class="insp-name">${esc(l.nombre)}</span><br><span class="insp-cod">${esc(l.cod)}</span></td>
       <td class="num"><input class="insp-usos-input" type="number" min="0" max="20" value="${l.usos}" onchange="onInsumoUsosChange(${sidx},${i},this.value)"></td>
-      <td class="num insp-num">${l.disp} → <span class="insp-after">${resta}</span></td>
+      <td class="num insp-num">${restaTxt}</td>
       <td>${pill}</td>
     </tr>`;
   }).join('');
-  const totalDesc = lineas.reduce((a,l)=>a+l.usos,0);
+  // El cálculo de alertas y descuentos ignora las líneas con usos=0
+  const lineasActivas = lineas.filter(l => l.usos > 0);
+  const totalDesc = lineasActivas.reduce((a,l)=>a+l.usos,0);
   const usosDespues = USOS_TOTALES_DISPONIBLES_HOY - totalDesc;
-  const hayQuiebre = lineas.some(l=>(l.disp-l.usos)<=UMBRAL_QUIEBRE);
-  const hayAlerta = !hayQuiebre && lineas.some(l=>(l.disp-l.usos)<UMBRAL_ALERTA);
+  const hayQuiebre = lineasActivas.some(l=>(l.disp-l.usos)<=UMBRAL_QUIEBRE);
+  const hayAlerta = !hayQuiebre && lineasActivas.some(l=>(l.disp-l.usos)<UMBRAL_ALERTA);
   let alertHTML='';
   if (hayQuiebre){
-    const items=lineas.filter(l=>(l.disp-l.usos)<=UMBRAL_QUIEBRE).map(l=>esc(l.nombre)).join(', ');
+    const items=lineasActivas.filter(l=>(l.disp-l.usos)<=UMBRAL_QUIEBRE).map(l=>esc(l.nombre)).join(', ');
     alertHTML=`<div class="insp-alert"><i style="font-size:16px;margin-top:1px">⚠</i><div><strong>Quiebre proyectado · ${items}</strong><br>Si confirmas esta cirugía, queda 0 stock. Considera emitir OC urgente o cambiar fecha.</div></div>`;
   } else if (hayAlerta){
-    const items=lineas.filter(l=>(l.disp-l.usos)<UMBRAL_ALERTA&&(l.disp-l.usos)>UMBRAL_QUIEBRE).map(l=>esc(l.nombre)).join(', ');
+    const items=lineasActivas.filter(l=>(l.disp-l.usos)<UMBRAL_ALERTA&&(l.disp-l.usos)>UMBRAL_QUIEBRE).map(l=>esc(l.nombre)).join(', ');
     alertHTML=`<div class="insp-alert insp-alert-info"><i style="font-size:16px;margin-top:1px">⚠</i><div><strong>Stock bajo · ${items}</strong><br>Queda menos de ${UMBRAL_ALERTA} usos después de esta cirugía. Conviene planificar nueva OC.</div></div>`;
   }
   panel.innerHTML = `
@@ -1965,7 +1997,8 @@ async function postProgramacionInsumos(datosCirugia, sidx){
     paciente: _iniciales(datosCirugia.paciente),  // iniciales — sin PII completa
     proctor: datosCirugia.proctor ? (datosCirugia.proctorName || 'Proctor') : '',
     origen: 'agenda-online',
-    insumos_override: insp.lineas.map(l => ({ cod: l.cod, usos: l.usos }))
+    // Solo mando al backend los instrumentos con usos > 0 (los demás son neutros)
+    insumos_override: insp.lineas.filter(l => l.usos > 0).map(l => ({ cod: l.cod, usos: l.usos }))
   };
   try {
     const r = await fetch(INSUMOS_APPS_SCRIPT_URL, {
