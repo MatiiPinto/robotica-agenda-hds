@@ -1266,7 +1266,7 @@ function addProc(key, sidx){
   if (insp){
     newProc.procedimiento = insp.procedimiento;
     newProc.insumosProc = insp.lineas.map(l=>({cod:l.cod, nombre:l.nombre, usos:l.usos}));
-    postProgramacionInsumos({ paciente:pac, fecha:key, cirujano:cir, equipo:sl.team||'' }, sidx); // TODO PRODUCCIÓN
+    postProgramacionInsumos({ paciente:pac, fecha:key, cirujano:cir, equipo:sl.team||'', proctor, proctorName }, sidx);
     _inspState[sidx] = {procedimiento:null, lineas:[]};
   }
   sl.procs.push(newProc);
@@ -1409,8 +1409,9 @@ let _instrBackKey=null;
 // el Apps Script del "bloque 20" (catálogo real + reconciliacion_strattner).
 // ════════════════════════════════════════════════════════════════════════
 
-// TODO PRODUCCIÓN: URL del Web App del bloque 20
-const INSUMOS_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/REEMPLAZAR_CON_TU_DEPLOY_ID/exec';
+// URL del Web App del bloque 20 (Apps Script · CONECTOR_A_HUB_HDS)
+// Endpoints expuestos: catalogoInsumosProc, disponibilidadInsumos, cirugiasAgendadas, agendar (POST), ping
+const INSUMOS_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxarjA7NpPq2LEEl9zKzevRVrHBIXBELCMcPXsiuXlmDqTcCAt44_S1W9oXnFxWjPCC/exec';
 const UMBRAL_ALERTA = 5;
 const UMBRAL_QUIEBRE = 0;
 const USOS_TOTALES_DISPONIBLES_HOY = 1190;
@@ -1464,17 +1465,49 @@ const CATALOGO_INSUMOS = {
 let _inspState = { 0:{procedimiento:null,lineas:[]}, 1:{procedimiento:null,lineas:[]} };
 
 async function fetchCatalogoProcedimiento(procedimiento){
-  // TODO PRODUCCIÓN: reemplazar por fetch real al bloque 20
-  // const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=catalogoInsumosProc&proc=${encodeURIComponent(procedimiento)}`);
-  // const d = await r.json(); return d.insumos;
-  return (CATALOGO_INSUMOS[procedimiento]||[]).map(l=>({...l}));
+  // Trae la huella de insumos del backend Strattner (bloque 22 · STRATTNER_HUELLA_INSUMOS).
+  // Si el endpoint falla (offline, deploy caído, CORS), cae a CATALOGO_INSUMOS local.
+  try {
+    const url = `${INSUMOS_APPS_SCRIPT_URL}?action=catalogoInsumosProc&proc=${encodeURIComponent(procedimiento)}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if (!d || !d.ok || !Array.isArray(d.insumos)) throw new Error('schema inesperado');
+    // Schema backend: { cod, nombre, usos_proyectados, usos_por_unidad, precio_neto }
+    // Schema frontend esperado: { cod, nombre, usos, disp }
+    return d.insumos.map(l => ({
+      cod: l.cod,
+      nombre: l.nombre,
+      usos: l.usos_proyectados || 1,
+      disp: 0  // se completa después con fetchDisponibilidadActual
+    }));
+  } catch(err) {
+    console.warn('[insumos] fetchCatalogoProcedimiento fallback local:', err.message);
+    return (CATALOGO_INSUMOS[procedimiento]||[]).map(l=>({...l}));
+  }
 }
+// Cache de disponibilidad: la planilla casi no cambia mientras dura el formulario.
+// 60s de TTL es suficiente para evitar re-fetch al cambiar de procedimiento.
+let _dispCache = { ts: 0, data: null };
 async function fetchDisponibilidadActual(){
-  // TODO PRODUCCIÓN: fetch del nodo reconciliacion_strattner del bloque 20
-  // const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=disponibilidadInsumos`);
-  // const d = await r.json();
-  // return d.reconciliacion_strattner.productos.reduce((acc,p)=>{acc[p.codigo_intuitive]=p.usos_restantes||0;return acc;},{});
-  return null;
+  const now = Date.now();
+  if (_dispCache.data && (now - _dispCache.ts) < 60000) return _dispCache.data;
+  try {
+    const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=disponibilidadInsumos`);
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    if (!d || !d.ok || !Array.isArray(d.productos)) throw new Error('schema inesperado');
+    // Mapeo a dict {cod: usos_restantes} que es lo que renderPanelInsumos espera
+    const dict = d.productos.reduce((acc,p) => {
+      acc[p.cod] = p.usos_restantes != null ? p.usos_restantes : 0;
+      return acc;
+    }, {});
+    _dispCache = { ts: now, data: dict };
+    return dict;
+  } catch(err) {
+    console.warn('[insumos] fetchDisponibilidadActual sin backend:', err.message);
+    return null;  // null = mantener disp del catálogo local
+  }
 }
 
 async function renderPanelInsumos(sidx, procedimiento){
@@ -1542,14 +1575,51 @@ function onInsumoUsosChange(sidx, idx, valor){
   pintarPanelInsumos(sidx);
 }
 
-// TODO PRODUCCIÓN: POST de confirmación al Apps Script del bloque 20
-// (registra cirugía + insumos proyectados en hojas CIRUGIAS_AGENDADAS / INS_PROYECTADOS)
+// Privacy helper: nombre completo → iniciales con punto.
+// "Juan Pérez Sánchez" → "J.P.S."   "JPS" → "JPS"   "" → ""
+function _iniciales(nombre){
+  if (!nombre) return '';
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 1) return partes[0];
+  return partes.map(p => p[0].toUpperCase() + '.').join('');
+}
+
+// POST de confirmación al Apps Script del bloque 20.
+// Registra la cirugía en hoja CIRUGIAS AGENDADAS + descuenta insumos en INS PROYECTADOS.
+// El dashboard de Reportería Cx Robótica leerá la actualización al refrescar.
 async function postProgramacionInsumos(datosCirugia, sidx){
-  // const body = { accion:'agendar', ...datosCirugia,
-  //   procedimiento:_inspState[sidx].procedimiento,
-  //   insumos_proyectados:_inspState[sidx].lineas.map(l=>({cod:l.cod,usos:l.usos})) };
-  // const r = await fetch(INSUMOS_APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(body)});
-  // return r.json();
+  const insp = _inspState[sidx];
+  if (!insp || !insp.procedimiento) return;
+  // Apps Script Web App no acepta Content-Type: application/json sin preflight CORS.
+  // Workaround: text/plain;charset=utf-8 (el doPost del backend usa JSON.parse igualmente).
+  const body = {
+    action: 'agendar',
+    fecha: datosCirugia.fecha,
+    equipo: datosCirugia.equipo || '',
+    cirujano: datosCirugia.cirujano || '',
+    procedimiento: insp.procedimiento,
+    paciente: _iniciales(datosCirugia.paciente),  // iniciales — sin PII completa
+    proctor: datosCirugia.proctor ? (datosCirugia.proctorName || 'Proctor') : '',
+    origen: 'agenda-online',
+    insumos_override: insp.lineas.map(l => ({ cod: l.cod, usos: l.usos }))
+  };
+  try {
+    const r = await fetch(INSUMOS_APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d && d.ok) {
+      console.log('[insumos] cirugía registrada en backend:', d.registro);
+    } else {
+      console.warn('[insumos] backend rechazó el registro:', d && d.error);
+    }
+    return d;
+  } catch(err) {
+    console.warn('[insumos] no se pudo registrar en backend (queda solo local):', err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 // ── GENERADOR ──
