@@ -264,6 +264,27 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
 .insp-source{font-size:9.5px;color:#94A3B8;font-style:italic;margin-top:8px;text-align:right}
 .insp-empty{padding:14px;text-align:center;color:#64748B;font-size:12px;font-style:italic}
 
+/* ── Inventario en circulación (tarjeta lateral) ── */
+.inv-totales{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:6px 0 12px}
+.inv-kpi{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:8px 10px}
+.inv-kpi .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.inv-kpi .l{font-size:9.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+.inv-kpi.circ .v{color:#4FD9A6}
+.inv-kpi.usos .v{color:#00cfff}
+.inv-kpi.agot .v{color:#FF8B8B}
+.inv-kpi.recep .v{color:#E6EAF3}
+.inv-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer}
+.inv-row:hover{background:rgba(255,255,255,.03)}
+.inv-row .nm{flex:1;font-size:12px;color:#E6EAF3;line-height:1.2}
+.inv-row .nm small{display:block;color:#64748b;font-size:9.5px;font-variant-numeric:tabular-nums}
+.inv-bar{width:54px;height:6px;border-radius:3px;background:rgba(255,255,255,.08);overflow:hidden;flex-shrink:0}
+.inv-bar i{display:block;height:100%;border-radius:3px}
+.inv-usos{min-width:42px;text-align:right;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.inv-detail{font-size:10.5px;color:#94a3b8;padding:2px 4px 9px 4px;display:none}
+.inv-detail.open{display:block}
+.inv-detail b{color:#cbd5e1}
+.inv-foot{font-size:9.5px;color:#64748b;font-style:italic;margin-top:8px;text-align:right}
+
 /* Spinner para loaders */
 @keyframes spin{to{transform:rotate(360deg)}}
 
@@ -444,6 +465,16 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <div class="side-card">
       <h3>👥 Cola por equipo <span class="count" id="cola-total">0</span></h3>
       <div id="cola-wrap"></div>
+    </div>
+
+    <div class="side-card" id="inv-card">
+      <h3>📦 Inventario en circulación
+        <button id="inv-refresh" title="Actualizar" onclick="loadInventario(true)"
+          style="float:right;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#94a3b8;border-radius:6px;font-size:11px;padding:2px 8px;cursor:pointer">↻</button>
+      </h3>
+      <div id="inv-totales" class="inv-totales"></div>
+      <div id="inv-wrap"></div>
+      <div class="inv-foot" id="inv-foot"></div>
     </div>
   </div>
 </div>
@@ -1841,7 +1872,82 @@ function getProcedimientosByEquipo(equipoId){
 // Si falla, no rompe el resto de la app.
 window.addEventListener('DOMContentLoaded', () => {
   fetchPersonas().catch(e => console.warn('[personas] init falló:', e));
+  loadInventario().catch(e => console.warn('[inventario] init falló:', e));
 });
+
+// ══════════════════════════════════════════════════════════════════════
+// INVENTARIO EN CIRCULACIÓN
+// ──────────────────────────────────────────────────────────────────────
+// Muestra, por instrumento reutilizable, cuántos lotes/series físicos hay
+// en circulación en el hospital (recepcionados con usos > 0) y cuántos
+// "usos" quedan en total. Lee el endpoint ?action=inventario (bloque 20),
+// que agrega la hoja INS USADOS. Cache de 10 min para no recargar siempre.
+let _invCache = null, _invCacheTs = 0;
+const INV_CACHE_MS = 10 * 60 * 1000;
+
+async function loadInventario(force){
+  const wrap = document.getElementById('inv-wrap');
+  const totEl = document.getElementById('inv-totales');
+  const foot = document.getElementById('inv-foot');
+  if(!wrap) return;
+  try{
+    let data = _invCache;
+    if(force || !data || (Date.now() - _invCacheTs) > INV_CACHE_MS){
+      const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=inventario`);
+      data = await r.json();
+      _invCache = data; _invCacheTs = Date.now();
+    }
+    if(!data || !data.ok || !data.productos || !data.productos.length){
+      wrap.innerHTML = '<div class="insp-empty">Sin datos de inventario</div>';
+      totEl.innerHTML = ''; return;
+    }
+    renderInventario(data);
+  }catch(err){
+    wrap.innerHTML = '<div class="insp-empty">Backend no disponible</div>';
+    if(totEl) totEl.innerHTML='';
+    console.warn('[inventario]', err.message);
+  }
+}
+
+function renderInventario(data){
+  const t = data.totales || {};
+  const totEl = document.getElementById('inv-totales');
+  const wrap = document.getElementById('inv-wrap');
+  const foot = document.getElementById('inv-foot');
+
+  totEl.innerHTML = `
+    <div class="inv-kpi circ"><div class="v">${t.en_circulacion||0}</div><div class="l">En circulación</div></div>
+    <div class="inv-kpi usos"><div class="v">${t.usos_restantes||0}</div><div class="l">Usos restantes</div></div>
+    <div class="inv-kpi recep"><div class="v">${t.recepcionados||0}</div><div class="l">Recepcionados</div></div>
+    <div class="inv-kpi agot"><div class="v">${t.agotados||0}${t.falla?('+'+t.falla):''}</div><div class="l">Agotados${t.falla?' / falla':''}</div></div>`;
+
+  wrap.innerHTML = data.productos.map((p, i) => {
+    const cap = (p.usos_por_unidad||0) * (p.recepcionados||0) || 1;
+    const pct = Math.max(0, Math.min(100, Math.round((p.usos_restantes / cap) * 100)));
+    const col = pct >= 50 ? '#4FD9A6' : pct >= 25 ? '#FFC169' : '#FF8B8B';
+    const nombre = (p.nombre||p.cod).replace(/\s*\(.*?\)\s*/g,'').trim();
+    return `<div class="inv-row" onclick="toggleInvDetail(${i})">
+        <div class="nm">${nombre}<small>${p.en_circulacion} en circ. · ${p.cod}</small></div>
+        <div class="inv-bar"><i style="width:${pct}%;background:${col}"></i></div>
+        <div class="inv-usos" style="color:${col}">${p.usos_restantes}</div>
+      </div>
+      <div class="inv-detail" id="inv-d-${i}">
+        <b>${p.recepcionados}</b> lotes recepcionados ·
+        <b>${p.en_circulacion}</b> en circulación ·
+        <b>${p.agotados}</b> agotados${p.falla?` · <b>${p.falla}</b> en falla`:''}<br>
+        Usos: <b>${p.usos_restantes}</b> restantes de <b>${cap}</b> totales ·
+        <b>${p.usos_ejecutados}</b> ya ejecutados · ${p.usos_por_unidad} usos/unidad
+      </div>`;
+  }).join('');
+
+  const fecha = data.ts ? new Date(data.ts).toLocaleString('es-CL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+  foot.textContent = 'Según lotes/series en INS USADOS' + (fecha ? ' · ' + fecha : '');
+}
+
+function toggleInvDetail(i){
+  const el = document.getElementById('inv-d-'+i);
+  if(el) el.classList.toggle('open');
+}
 
 // Catálogo canon de los 6 instrumentos reutilizables del stock HDS.
 // El panel SIEMPRE muestra estos 6, ya sea con su valor de huella o con usos=0
