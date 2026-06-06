@@ -352,7 +352,7 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <!-- PASO 1: Login -->
     <div id="auth-step-login">
       <div class="auth-step-title">Ingreso al sistema</div>
-      <div class="auth-step-sub">Usa tu RUT y la clave de acceso. Si es tu primera vez, la clave inicial son los 4 dígitos antes del guión de tu RUT (ej: 16960208-5 → 0208).</div>
+      <div class="auth-step-sub">Usa tu RUT y tu clave. Si es tu primera vez, la clave inicial son los <b>primeros 4 dígitos de tu RUT</b> (ej: 16960208-5 → 1696).</div>
       <div class="auth-error" id="auth-err"></div>
       <div class="auth-field">
         <label>RUT</label>
@@ -361,7 +361,7 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
       <div class="auth-field">
         <label>Clave</label>
         <input id="auth-pwd" type="password" placeholder="••••" autocomplete="current-password">
-        <div class="hint">¿Primera vez? Usa los 4 dígitos antes del guión de tu RUT.</div>
+        <div class="hint">¿Primera vez? Usa los primeros 4 dígitos de tu RUT.</div>
       </div>
       <button class="auth-btn" id="auth-login-btn">Ingresar</button>
     </div>
@@ -369,15 +369,15 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <!-- PASO 2: Cambio de clave forzado -->
     <div id="auth-step-change" style="display:none">
       <div class="auth-step-title">Crea tu clave personal</div>
-      <div class="auth-step-sub">Por seguridad, debes cambiar la clave inicial.<br><b>Mínimo 6 caracteres · distinta del RUT.</b></div>
+      <div class="auth-step-sub">Por seguridad, debes cambiar la clave inicial.<br><b>Crea un PIN de exactamente 6 dígitos (solo números).</b></div>
       <div class="auth-error" id="auth-err-ch"></div>
       <div class="auth-field">
         <label>Nueva clave</label>
-        <input id="auth-new-pwd" type="password" placeholder="Mínimo 6 caracteres">
+        <input id="auth-new-pwd" type="password" placeholder="6 dígitos" inputmode="numeric" maxlength="6">
       </div>
       <div class="auth-field">
         <label>Confirma la clave</label>
-        <input id="auth-new-pwd2" type="password" placeholder="Repite la clave nueva">
+        <input id="auth-new-pwd2" type="password" placeholder="Repite el PIN" inputmode="numeric" maxlength="6">
       </div>
       <button class="auth-btn" id="auth-save-pwd-btn">Guardar nueva clave</button>
     </div>
@@ -541,11 +541,21 @@ async function flushWrites(){
   if (!_writeQueue.length) return;
   setSyncStatus('sync');
   const batch = _writeQueue.splice(0, _writeQueue.length);
-  let okAll = true;
+  let okAll = true, denegado = false;
   for (const fn of batch){
-    try { await fn(); } catch(e){ okAll = false; console.error('write', e); }
+    try {
+      const res = await fn();
+      if (res && res.ok === false){
+        okAll = false;
+        if (res.err === 'team_forbidden') denegado = true;
+        console.error('write rechazado por el servidor:', res.err);
+      }
+    } catch(e){ okAll = false; console.error('write', e); }
   }
   setSyncStatus(okAll ? 'ok' : 'err');
+  if (denegado){
+    alert('⛔ No tienes permiso de edición sobre ese equipo.\n\nTu cambio NO quedó guardado en el servidor.\nRecarga la página para ver el estado real.');
+  }
   if (okAll) setTimeout(() => setSyncStatus('idle'), 1200);
 }
 
@@ -573,11 +583,10 @@ function normRut(rut){
   if (!rut.includes('-') && rut.length >= 2) rut = rut.slice(0,-1) + '-' + rut.slice(-1);
   return rut;
 }
-// Clave inicial = 4 dígitos antes del dígito verificador
+// Clave inicial = PRIMEROS 4 dígitos del RUT (regla jun-2026, igual que el backend)
 function defaultPwd(rut){
-  // Clave inicial = 4 dígitos previos al dígito verificador (igual que el backend).
-  // Ej: 16960208-5 → "0208". (Antes usaba los primeros 4, lo que no coincidía.)
-  return (rut||'').replace(/[^0-9kK]/g,'').slice(-5,-1);
+  // Ej: 16960208-5 → "1696"
+  return (rut||'').replace(/[^0-9kK]/g,'').slice(0,4);
 }
 // Buscar funcionario en dotacion.js
 function findStaff(rut){
@@ -625,16 +634,16 @@ async function authTryLogin(){
       }
       SESSION_TOKEN = res.token;
       try { localStorage.setItem(TOKEN_STORAGE, SESSION_TOKEN); } catch(e){}
-      // Si mustChangePwd → forzar cambio
+      // Si mustChangePwd → forzar cambio (guardamos team para saltar el picker después)
       if (res.user.mustChangePwd){
-        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor' };
+        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor', team: res.user.team || '' };
         setSyncStatus('idle');
         showAuthStep('change');
         return;
       }
-      // Si no tiene team → seleccionar
-      if (!res.user.team){
-        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor' };
+      // Sin team o editor GLOBAL ('*') → elegir equipo de trabajo
+      if (!res.user.team || res.user.team === '*'){
+        _authPendingTeam = { rut, name: displayName, role: res.user.role || 'editor', team: res.user.team || '' };
         setSyncStatus('idle');
         showAuthStep('team');
         return;
@@ -673,7 +682,7 @@ async function authTryLogin(){
   } else {
     const def = defaultPwd(rut);
     if (pwd !== def){
-      authError('Clave incorrecta. La clave inicial son los 4 dígitos antes del guión del RUT.');
+      authError('Clave incorrecta. La clave inicial son los primeros 4 dígitos de tu RUT.');
       return;
     }
     _authPendingTeam = { rut, name: staff.n };
@@ -686,8 +695,8 @@ async function authSaveNewPwd(){
   const p2 = document.getElementById('auth-new-pwd2').value;
   const rut = _authPendingTeam?.rut;
   if (!rut) return;
-  if (p1.length < 6){ authError('La clave debe tener al menos 6 caracteres', 'change'); return; }
-  if (p1 !== p2){ authError('Las claves no coinciden', 'change'); return; }
+  if (!/^\d{6}$/.test(p1)){ authError('El PIN debe ser de exactamente 6 dígitos (solo números)', 'change'); return; }
+  if (p1 !== p2){ authError('Los PIN no coinciden', 'change'); return; }
   if (p1.replace(/[^0-9]/g,'') === rut.replace(/[^0-9K\-]/g,'').replace('-','').toUpperCase()){
     authError('La clave no puede ser tu RUT completo', 'change'); return;
   }
@@ -707,7 +716,17 @@ async function authSaveNewPwd(){
         return;
       }
       setSyncStatus('ok'); setTimeout(() => setSyncStatus('idle'), 1000);
-      // Después de cambiar la clave, no tenemos team — ir a selección
+      // Si el server ya define equipo fijo (ur/da/he/db o _viewer) → entrar directo;
+      // editores globales ('*') o sin team → elegir equipo de trabajo
+      const teamSrv = _authPendingTeam.team || '';
+      if (teamSrv && teamSrv !== '*'){
+        AUTH_DB.session = { rut, name: _authPendingTeam.name, team: teamSrv, role: _authPendingTeam.role || 'editor', since: Date.now() };
+        saveAuth();
+        await loadStateFromServer();
+        applySession();
+        document.getElementById('auth-overlay').classList.add('hidden');
+        return;
+      }
       showAuthStep('team');
       return;
     } catch(e){
