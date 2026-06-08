@@ -1766,7 +1766,9 @@ let _instrBackKey=null;
 const INSUMOS_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxarjA7NpPq2LEEl9zKzevRVrHBIXBELCMcPXsiuXlmDqTcCAt44_S1W9oXnFxWjPCC/exec';
 const UMBRAL_ALERTA = 5;
 const UMBRAL_QUIEBRE = 0;
-const USOS_TOTALES_DISPONIBLES_HOY = 1190;
+// (jun-2026) El total hardcodeado 1.190 se eliminó: mezclaba usos de
+// instrumentos con unidades de consumibles. Ahora el saldo del panel se
+// alimenta del inventario unificado (?action=inventario · solo reutilizables).
 
 const CATALOGO_INSUMOS = {
   'Prostatectomía Radical + LDE': [
@@ -2060,6 +2062,11 @@ async function fetchDisponibilidadActual(){
 async function renderPanelInsumos(sidx, procedimiento){
   const panel = document.getElementById('inspPanel-'+sidx);
   if (!panel) return;
+  // Si el inventario unificado aún no está en cache, cargarlo y re-renderizar
+  // para que el saldo (circulando / por pedir) salga con cifras reales.
+  if (!_invCache && procedimiento){
+    loadInventario().then(() => { try{ renderPanelInsumos(sidx, procedimiento); }catch(e){} }).catch(()=>{});
+  }
   if (!procedimiento){
     _inspState[sidx] = {procedimiento:null, lineas:[]};
     panel.style.display='none';
@@ -2102,7 +2109,11 @@ function pintarPanelInsumos(sidx){
   // El cálculo de alertas y descuentos ignora las líneas con usos=0
   const lineasActivas = lineas.filter(l => l.usos > 0);
   const totalDesc = lineasActivas.reduce((a,l)=>a+l.usos,0);
-  const usosDespues = USOS_TOTALES_DISPONIBLES_HOY - totalDesc;
+  // Saldo desde el inventario unificado (cache de la tarjeta de inventario)
+  const invT = (_invCache && _invCache.totales) || null;
+  const usosCirc    = invT ? (invT.usos_restantes  || 0) : null;
+  const usosPedir   = invT ? (invT.usos_por_pedir  || 0) : null;
+  const usosDespues = usosCirc != null ? (usosCirc - totalDesc) : null;
   const hayQuiebre = lineasActivas.some(l=>(l.disp-l.usos)<=UMBRAL_QUIEBRE);
   const hayAlerta = !hayQuiebre && lineasActivas.some(l=>(l.disp-l.usos)<UMBRAL_ALERTA);
   let alertHTML='';
@@ -2120,12 +2131,14 @@ function pintarPanelInsumos(sidx){
       <tbody>${filas}</tbody>
     </table>
     <div class="insp-saldo">
-      <div class="insp-saldo-row"><span>Usos disponibles hoy</span><span class="insp-num">${USOS_TOTALES_DISPONIBLES_HOY.toLocaleString('es-CL')}</span></div>
+      <div class="insp-saldo-row"><span>Usos circulando (esterilización)</span><span class="insp-num">${usosCirc!=null?usosCirc.toLocaleString('es-CL'):'—'}</span></div>
+      <div class="insp-saldo-row"><span>Usos por pedir (convenio)</span><span class="insp-num" style="color:#9D6FF0">${usosPedir!=null?'+'+usosPedir.toLocaleString('es-CL'):'—'}</span></div>
       <div class="insp-saldo-row"><span>Descuento esta cirugía</span><span class="insp-num" style="color:#FFC169">−${totalDesc}</span></div>
-      <div class="insp-saldo-row t"><span>Saldo después de programar</span><span class="insp-num" style="color:#4FD9A6">${usosDespues.toLocaleString('es-CL')}</span></div>
+      <div class="insp-saldo-row t"><span>Saldo circulando tras programar</span><span class="insp-num" style="color:#4FD9A6">${usosDespues!=null?usosDespues.toLocaleString('es-CL'):'—'}</span></div>
+      ${usosCirc!=null?`<div class="insp-saldo-row" style="font-size:10.5px;color:#64748B"><span>Total con lo pedible (circ + por pedir − cx)</span><span class="insp-num">${(usosCirc+usosPedir-totalDesc).toLocaleString('es-CL')}</span></div>`:''}
     </div>
     ${alertHTML}
-    <div class="insp-source">Fuente: planilla INSUMOS + INS x PAC del Drive</div>`;
+    <div class="insp-source">Fuente: inventario del convenio (INS USADOS + Anexo 7 v2)</div>`;
 }
 function onInsumoUsosChange(sidx, idx, valor){
   const n = Math.max(0, parseInt(valor)||0);
