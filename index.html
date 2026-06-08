@@ -144,6 +144,16 @@ a{color:inherit;text-decoration:none}
 .actions-card button.danger{background:#dc2626;color:#fff}
 
 /* MODAL */
+/* KPIs del header clickeables (jun-2026) */
+.kpi-btn{cursor:pointer;border-radius:8px;padding:2px 8px;transition:.15s}
+.kpi-btn:hover{background:rgba(59,130,246,.15);transform:translateY(-1px)}
+.kpi-detail-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;border-radius:6px;font-size:13px}
+.kpi-detail-row:hover{background:rgba(59,130,246,.12)}
+.kpi-detail-row .fec{color:#7dd3fc;font-weight:700;min-width:110px;font-variant-numeric:tabular-nums}
+.kpi-detail-row .eq{font-size:10px;font-weight:800;padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.08);text-transform:uppercase}
+.kpi-detail-row .px{color:#e2e8f0;flex:1}
+.kpi-detail-row .pr{color:#94a3b8;font-size:11px}
+
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;display:none;align-items:center;justify-content:center;padding:18px}
 .modal-bg.open{display:flex}
 .modal-box{background:#1e293b;border:1px solid #334155;border-radius:14px;max-width:860px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.5)}
@@ -408,9 +418,9 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <div class="sub">Rotación · Cola por equipo · Generación automática · v1.0 MVP</div>
   </div>
   <div class="hdr-stat">
-    <div><div class="lab">Programadas</div><div class="num" id="kpi-prog">0</div></div>
-    <div><div class="lab">Cola total</div><div class="num" id="kpi-cola">0</div></div>
-    <div><div class="lab">Próx. semana</div><div class="num" id="kpi-prox">0</div></div>
+    <div class="kpi-btn" onclick="showKpiDetail('prog')" title="Ver cuáles son"><div class="lab">Programadas</div><div class="num" id="kpi-prog">0</div></div>
+    <div class="kpi-btn" onclick="showKpiDetail('cola')" title="Ver cuáles son"><div class="lab">Cola total</div><div class="num" id="kpi-cola">0</div></div>
+    <div class="kpi-btn" onclick="showKpiDetail('prox')" title="Ver cuáles son"><div class="lab">Próx. semana</div><div class="num" id="kpi-prox">0</div></div>
   </div>
   <div id="user-chip-wrap" style="margin-left:16px;display:none">
     <div class="user-chip">
@@ -1174,6 +1184,65 @@ function updateKpis(){
   document.getElementById('kpi-prog').textContent = totalProcs;
   document.getElementById('kpi-cola').textContent = totalCola;
   document.getElementById('kpi-prox').textContent = nextWeek;
+}
+
+// ── DETALLE DE KPIs (jun-2026) ─────────────────────────────────────────
+// Los números del header son botones: muestran exactamente a qué cirugías
+// o pacientes en cola se refieren. Click en una fila → abre ese día.
+function showKpiDetail(tipo){
+  const box = document.getElementById('modal-bg');
+  const inner = document.getElementById('modal-box');
+  if(!box || !inner) return;
+
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const en7 = new Date(hoy); en7.setDate(hoy.getDate()+7);
+
+  let titulo = '', filas = [];
+
+  if(tipo === 'prog' || tipo === 'prox'){
+    titulo = tipo === 'prog' ? '📋 Cirugías programadas' : '📆 Cirugías de la próxima semana';
+    Object.entries(state.days).sort().forEach(([k, raw]) => {
+      const d = normalizeDay(raw);
+      const dt = parseDate(k);
+      if(tipo === 'prox' && !(dt >= hoy && dt < en7)) return;
+      d.slots.forEach((sl, si) => {
+        (sl.procs || []).forEach(p => {
+          const eq = sl.team ? (EQUIPOS[sl.team] || {short:sl.team, color:'#94a3b8'}) : {short:'—', color:'#94a3b8'};
+          const dia = WEEKDAYS[(dt.getDay()+6)%7];
+          const pasada = dt < hoy;
+          filas.push(`<div class="kpi-detail-row" onclick="closeModal();setTimeout(()=>openDay('${k}'),120)" title="Abrir este día">
+            <span class="fec">${dia} ${k}${pasada?' ⏱':''}</span>
+            <span class="eq" style="color:${eq.color}">${eq.short}</span>
+            <span class="px"><b>${(p.paciente||'—')}</b> · ${p.tipo||'sin procedimiento'}</span>
+            <span class="pr">${p.cirujano||''} · ${si+1}ª hora</span>
+          </div>`);
+        });
+      });
+    });
+  } else if(tipo === 'cola'){
+    titulo = '👥 Pacientes en cola por equipo';
+    EQ_ORDER.forEach(t => {
+      const eq = EQUIPOS[t];
+      (state.queue[t] || []).forEach((p, i) => {
+        filas.push(`<div class="kpi-detail-row" onclick="closeModal()">
+          <span class="eq" style="color:${eq.color}">${eq.short}</span>
+          <span class="px"><b>${p.paciente||'—'}</b> · ${p.tipo||''}</span>
+          <span class="pr">${p.cirujano||''}</span>
+        </div>`);
+      });
+    });
+  }
+
+  inner.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="margin:0;font-size:16px">${titulo} <span style="color:#7dd3fc">(${filas.length})</span></h3>
+      <button onclick="closeModal()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#e2e8f0;border-radius:8px;padding:4px 12px;cursor:pointer;font-size:13px">✕</button>
+    </div>
+    ${filas.length
+      ? `<div style="max-height:60vh;overflow:auto">${filas.join('')}</div>
+         <div style="font-size:10.5px;color:#64748b;margin-top:10px">Click en una fila para abrir ese día${tipo!=='cola'?' (ahí puedes editar o eliminar la cirugía con ✕)':''}.</div>`
+      : `<div style="color:#94a3b8;padding:18px;text-align:center">No hay ${tipo==='cola'?'pacientes en cola':'cirugías en este rango'}.</div>`}`;
+  box.classList.add('open');
 }
 
 // ── COLA ──
