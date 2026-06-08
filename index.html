@@ -433,7 +433,6 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
         <button onclick="goToday()">⌖ Hoy</button>
       </div>
       <h2 style="text-align:right">Calendario</h2>
-      <button class="btn-primary" onclick="openGenerator()">⚙ Generar semanas</button>
     </div>
     <div class="cal-legend">
       <div class="item"><div class="dot ur"></div>Urología</div>
@@ -450,11 +449,7 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
     <div class="side-card actions-card">
       <h3>⚡ Acciones</h3>
       <div class="row">
-        <button onclick="openGenerator()" class="primary">⚙ Generar próximas semanas</button>
-      </div>
-      <div class="row">
-        <button onclick="exportCSV()">⬇ CSV</button>
-        <button onclick="exportIcs()">📅 iCal</button>
+        <button onclick="exportExcel()" class="primary" data-allow-viewer>📊 Descargar Excel (vista simple)</button>
       </div>
       <div class="row">
         <button onclick="clearMonth()" class="warn">🗑 Borrar mes visible</button>
@@ -2258,6 +2253,53 @@ function runGenerator(){
 }
 
 // ── EXPORT ──
+// ══ EXPORTAR EXCEL · vista simplificada (jun-2026) ════════════════════
+// Reemplaza CSV/iCal. Genera un .xls (HTML compatible con Excel) con las
+// cirugías programadas: fecha, horario, equipo, paciente, cirujano,
+// procedimiento y proctor. Solo días con cirugías.
+function exportExcel(){
+  const filas = [];
+  Object.entries(state.days).sort().forEach(([k, raw]) => {
+    const d = normalizeDay(raw);
+    if (d.blocked) return;
+    const dt = parseDate(k);
+    const dia = WEEKDAYS[(dt.getDay()+6)%7];
+    d.slots.forEach((sl, si) => {
+      (sl.procs || []).forEach(p => {
+        const eqName = sl.team ? (EQUIPOS[sl.team]?.name || sl.team) : '—';
+        filas.push([
+          k, dia, (si+1)+'ª hora', eqName,
+          p.paciente || '', p.cirujano || '', p.tipo || '',
+          p.proctor ? ('SÍ' + (p.proctorName ? ' · '+p.proctorName : '')) : 'NO'
+        ]);
+      });
+    });
+  });
+  if (!filas.length){ alert('No hay cirugías programadas para exportar.'); return; }
+
+  const hoy = new Date().toLocaleDateString('es-CL');
+  const th = ['Fecha','Día','Horario','Equipo','Paciente','Cirujano','Procedimiento','Proctor'];
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8">
+    <style>
+      table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt}
+      th{background:#1F4E78;color:#fff;font-weight:bold;padding:6px 10px;border:1px solid #888;text-align:left}
+      td{padding:5px 10px;border:1px solid #ccc}
+      .t{font-size:14pt;font-weight:bold;color:#1F4E78}
+    </style></head><body>
+    <table>
+      <tr><td class="t" colspan="${th.length}">Agenda Cirugía Robótica HDS · generado ${esc(hoy)}</td></tr>
+      <tr>${th.map(h=>'<th>'+h+'</th>').join('')}</tr>
+      ${filas.map(f=>'<tr>'+f.map(c=>'<td>'+esc(c)+'</td>').join('')+'</tr>').join('')}
+    </table></body></html>`;
+
+  const blob = new Blob(['﻿'+html], {type:'application/vnd.ms-excel;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'AgendaRobotica_HDS_' + new Date().toISOString().slice(0,10) + '.xls';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 function exportCSV(){
   const rows = [['fecha','dia_semana','equipo','paciente','cirujano','procedimiento','dur_min','proctor','instrumental']];
   Object.entries(state.days).sort().forEach(([k,raw]) => {
