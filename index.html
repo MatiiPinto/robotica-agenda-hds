@@ -1934,33 +1934,50 @@ function renderInventario(data){
   const wrap = document.getElementById('inv-wrap');
   const foot = document.getElementById('inv-foot');
 
+  // Modelo jun-2026: base convenio → en circulación (esterilización) → por pedir.
+  // Compatible con backend antiguo (campos nuevos → undefined → fallback).
+  const usosNetos = (t.usos_restantes||0) + (t.usos_por_pedir||0) - (t.usos_agendados||0);
   totEl.innerHTML = `
     <div class="inv-kpi circ"><div class="v">${t.en_circulacion||0}</div><div class="l">En circulación</div></div>
-    <div class="inv-kpi usos"><div class="v">${t.usos_restantes||0}</div><div class="l">Usos restantes</div></div>
-    <div class="inv-kpi recep"><div class="v">${t.recepcionados||0}</div><div class="l">Recepcionados</div></div>
-    <div class="inv-kpi agot"><div class="v">${t.agotados||0}${t.falla?('+'+t.falla):''}</div><div class="l">Agotados${t.falla?' / falla':''}</div></div>`;
+    <div class="inv-kpi usos"><div class="v">${t.usos_restantes||0}</div><div class="l">Usos circulando</div></div>
+    <div class="inv-kpi recep"><div class="v">${t.usos_por_pedir!=null?t.usos_por_pedir:'—'}</div><div class="l">Usos por pedir</div></div>
+    <div class="inv-kpi ${usosNetos<20?'agot':'circ'}"><div class="v">${t.usos_por_pedir!=null?usosNetos:(t.usos_restantes||0)}</div><div class="l">Usos netos${t.usos_agendados?' (−'+t.usos_agendados+' agend.)':''}</div></div>`;
 
-  wrap.innerHTML = data.productos.map((p, i) => {
-    const cap = (p.usos_por_unidad||0) * (p.recepcionados||0) || 1;
-    const pct = Math.max(0, Math.min(100, Math.round((p.usos_restantes / cap) * 100)));
+  const reutilizables = data.productos.filter(p => p.reutilizable !== false);
+  wrap.innerHTML = reutilizables.map((p, i) => {
+    const neto = p.usos_disponibles_neto != null ? p.usos_disponibles_neto : p.usos_restantes;
+    const capTotal = (p.usos_por_unidad||0) * Math.max(p.base_convenio||0, p.recepcionados||0) || 1;
+    const pct = Math.max(0, Math.min(100, Math.round((neto / capTotal) * 100)));
     const col = pct >= 50 ? '#4FD9A6' : pct >= 25 ? '#FFC169' : '#FF8B8B';
     const nombre = (p.nombre||p.cod).replace(/\s*\(.*?\)\s*/g,'').trim();
+    const al = p.alertas || [];
+    const badges =
+      (al.includes('SOBRE_PEDIDO') ? ' <span title="Se registraron más unidades que las del convenio">⚠️</span>' : '') +
+      (al.includes('FALLA_CON_USOS') ? ' <span title="Lote en falla con usos perdidos">🔻</span>' : '') +
+      (al.includes('NUNCA_SOLICITADO') ? ' <span title="En convenio pero nunca solicitado">💤</span>' : '');
+    const sub = p.por_pedir != null
+      ? `${p.en_circulacion} en circ. · ${Math.max(0,p.por_pedir)} por pedir${p.por_pedir<0?' · '+(-p.por_pedir)+' DE MÁS':''}`
+      : `${p.en_circulacion} en circ. · ${p.cod}`;
     return `<div class="inv-row" onclick="toggleInvDetail(${i})">
-        <div class="nm">${nombre}<small>${p.en_circulacion} en circ. · ${p.cod}</small></div>
+        <div class="nm">${nombre}${badges}<small>${sub}</small></div>
         <div class="inv-bar"><i style="width:${pct}%;background:${col}"></i></div>
-        <div class="inv-usos" style="color:${col}">${p.usos_restantes}</div>
+        <div class="inv-usos" style="color:${col}">${neto}</div>
       </div>
       <div class="inv-detail" id="inv-d-${i}">
-        <b>${p.recepcionados}</b> lotes recepcionados ·
-        <b>${p.en_circulacion}</b> en circulación ·
-        <b>${p.agotados}</b> agotados${p.falla?` · <b>${p.falla}</b> en falla`:''}<br>
-        Usos: <b>${p.usos_restantes}</b> restantes de <b>${cap}</b> totales ·
-        <b>${p.usos_ejecutados}</b> ya ejecutados · ${p.usos_por_unidad} usos/unidad
+        Convenio: <b>${p.base_convenio!=null?p.base_convenio:'—'}</b> unid. ·
+        Recepcionadas: <b>${p.recepcionados}</b> ·
+        En circulación: <b>${p.en_circulacion}</b> ·
+        Agotadas: <b>${p.agotados}</b>${p.falla?` · Falla: <b>${p.falla}</b> (−${p.usos_perdidos_falla||0} usos)`:''}<br>
+        Usos: <b>${p.usos_restantes}</b> circulando + <b>${p.usos_por_pedir||0}</b> por pedir
+        ${p.usos_agendados?` − <b>${p.usos_agendados}</b> agendados`:''} =
+        <b style="color:${col}">${neto} netos</b> · ${p.usos_por_unidad} usos/unidad
+        ${al.includes('SOBRE_PEDIDO')?'<br>⚠️ <b>Sobre-pedido:</b> hay más unidades registradas que las del convenio.':''}
+        ${al.includes('NUNCA_SOLICITADO')?'<br>💤 En convenio pero nunca se ha solicitado.':''}
       </div>`;
   }).join('');
 
   const fecha = data.ts ? new Date(data.ts).toLocaleString('es-CL',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
-  foot.textContent = 'Según lotes/series en INS USADOS' + (fecha ? ' · ' + fecha : '');
+  foot.textContent = 'Convenio Anexo 7 v2 + INS USADOS + agenda' + (fecha ? ' · ' + fecha : '');
 }
 
 function toggleInvDetail(i){
@@ -1972,7 +1989,7 @@ function toggleInvDetail(i){
 // El panel SIEMPRE muestra estos 6, ya sea con su valor de huella o con usos=0
 // (editables por el médico al armar la cirugía).
 const INSTRUMENTOS_CANON = [
-  { cod: '471006', nombre: 'Porta Aguja (Large Needle Driver)' },
+  { cod: '471006', nombre: 'Porta Aguja' },
   { cod: '471172', nombre: 'Pinza Bipolar Maryland' },
   { cod: '471205', nombre: 'Pinza Bipolar Fenestrada' },
   { cod: '470179', nombre: 'Tijera Curva Monopolar' },
