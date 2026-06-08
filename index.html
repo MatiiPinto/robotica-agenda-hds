@@ -1206,15 +1206,20 @@ function showKpiDetail(tipo){
       const dt = parseDate(k);
       if(tipo === 'prox' && !(dt >= hoy && dt < en7)) return;
       d.slots.forEach((sl, si) => {
-        (sl.procs || []).forEach(p => {
+        (sl.procs || []).forEach((p, pi) => {
           const eq = sl.team ? (EQUIPOS[sl.team] || {short:sl.team, color:'#94a3b8'}) : {short:'—', color:'#94a3b8'};
           const dia = WEEKDAYS[(dt.getDay()+6)%7];
           const pasada = dt < hoy;
+          const btnDel = isAdminOrJefe()
+            ? `<button onclick="event.stopPropagation();delProcFromKpi('${k}',${si},${pi},'${tipo}')" title="Eliminar esta cirugía"
+                 style="background:rgba(220,38,38,.18);border:1px solid rgba(220,38,38,.4);color:#fca5a5;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:12px;flex-shrink:0">🗑</button>`
+            : '';
           filas.push(`<div class="kpi-detail-row" onclick="closeModal();setTimeout(()=>openDay('${k}'),120)" title="Abrir este día">
             <span class="fec">${dia} ${k}${pasada?' ⏱':''}</span>
             <span class="eq" style="color:${eq.color}">${eq.short}</span>
             <span class="px"><b>${(p.paciente||'—')}</b> · ${p.tipo||'sin procedimiento'}</span>
             <span class="pr">${p.cirujano||''} · ${si+1}ª hora</span>
+            ${btnDel}
           </div>`);
         });
       });
@@ -1688,6 +1693,20 @@ function addProc(key, horario){
   sl.procs.push(newProc);
   save(); syncDay(key); renderCal(); openDay(key);
 }
+// Eliminar desde el detalle de KPIs (solo admin): borra, sincroniza y
+// refresca la lista del cuadro sin cerrarlo.
+function delProcFromKpi(key, sidx, pi, tipo){
+  if (!isAdminOrJefe()) return;
+  const day = ensureDay(key);
+  const p = day.slots[sidx] && day.slots[sidx].procs && day.slots[sidx].procs[pi];
+  if (!p) return;
+  if (!confirm('¿Eliminar la cirugía de "' + (p.paciente||'—') + '" del ' + key + '?')) return;
+  day.slots[sidx].procs.splice(pi, 1);
+  save(); syncDay(key); renderCal();
+  if (typeof updateKpis === 'function') updateKpis();
+  showKpiDetail(tipo);  // re-render del cuadro con índices frescos
+}
+
 // Eliminar un paciente propio (o cualquiera si admin/jefe)
 function delProc(key, sidx, pi){
   if (!confirm('¿Eliminar este paciente?')) return;
