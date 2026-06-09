@@ -462,6 +462,9 @@ body.readonly .modal-foot .btn:not(.ghost){pointer-events:none;opacity:.4}
         <button onclick="exportExcel()" class="primary" data-allow-viewer>📊 Descargar Excel (vista simple)</button>
       </div>
       <div class="row">
+        <button onclick="refrescarCatalogos()" data-allow-viewer>↻ Actualizar cirujanos / procedimientos</button>
+      </div>
+      <div class="row">
         <button onclick="clearMonth()" class="warn">🗑 Borrar mes visible</button>
         <button onclick="clearAll()" class="danger">⚠ Borrar todo</button>
       </div>
@@ -1387,8 +1390,12 @@ async function openDay(key, focusHorario){
   const info = getDayInfo(d);
   const box = document.getElementById('modal-box');
 
+  // Refrescar catálogos en segundo plano al abrir el día (cache 2 min):
+  // así los cirujanos/procedimientos nuevos del Drive aparecen sin recargar.
+  fetchPersonas().then(() => { try{ if(typeof renderQueue==='function') renderQueue(); }catch(e){} }).catch(()=>{});
+
   // Si los catálogos aún no están cargados, mostrar loader transitorio
-  // y esperar a que terminen. fetchPersonas tiene cache de 10min — es idempotente.
+  // y esperar a que terminen.
   if (!_personasCache.cirujanos.length && !info.blocked) {
     box.innerHTML = `<div class="modal-head ur"><div><h3>Cargando…</h3><div class="sub">Bajando catálogo de cirujanos y procedimientos</div></div></div>
       <div class="modal-body" style="padding:40px;text-align:center;color:#94a3b8">
@@ -1916,14 +1923,27 @@ let _personasCache = {
   equipos: []          // [{id, nombre}, ...]
 };
 
+// Fuerza recarga de los catálogos (cirujanos DOT + procedimientos CX + proctores)
+// tras editar el Drive, sin tener que recargar la página.
+async function refrescarCatalogos(){
+  try{
+    await fetchPersonas(true);
+    if(typeof renderCal === 'function') renderCal();
+    alert('✓ Catálogos actualizados: ' + _personasCache.cirujanos.length + ' cirujanos · ' +
+          _personasCache.procedimientos.length + ' procedimientos · ' + _personasCache.proctors.length + ' proctores.');
+  }catch(e){ alert('No se pudo actualizar desde el backend.'); }
+}
+
 async function fetchPersonas(forceRefresh){
-  // Cache de 10 minutos. Cambios en DOT/CX rara vez ocurren durante la sesión.
+  // Cache corto de 2 minutos para que los cirujanos (DOT) y procedimientos (CX)
+  // nuevos aparezcan pronto. cache:'no-store' evita que el navegador sirva una
+  // respuesta vieja del Apps Script.
   const now = Date.now();
-  if (!forceRefresh && _personasCache.cirujanos.length && (now - _personasCache.ts) < 600000) {
+  if (!forceRefresh && _personasCache.cirujanos.length && (now - _personasCache.ts) < 120000) {
     return _personasCache;
   }
   try {
-    const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=personas`);
+    const r = await fetch(`${INSUMOS_APPS_SCRIPT_URL}?action=personas&_=${now}`, {cache:'no-store'});
     if (!r.ok) throw new Error('HTTP '+r.status);
     const d = await r.json();
     if (!d || !d.ok) throw new Error('schema inesperado');
